@@ -29,12 +29,13 @@ for /f "tokens=1,2" %%a in ('ffprobe -v error -show_entries format^=duration -of
 )
 
 REM Get resolution, fps, and color space
-for /f "tokens=*" %%a in ('ffprobe -v error -select_streams v:0 -show_entries "stream=width,height,r_frame_rate,pix_fmt" -of csv^=s^=x:p^=0 "%input_file%"') do (
-    for /f "tokens=1-4 delims=x," %%b in ("%%a") do (
+for /f "tokens=*" %%a in ('ffprobe -v error -select_streams v:0 -show_entries "stream=width,height,r_frame_rate,nb_frames,pix_fmt" -of csv^=s^=x:p^=0 "%input_file%"') do (
+    for /f "tokens=1-5 delims=x," %%b in ("%%a") do (
         set "original_width=%%b"
         set "original_height=%%c"
         set "colorspace=%%d"
         set "source_fps_raw=%%e"
+        set "frame_count=%%f"
     )
 )
 
@@ -45,11 +46,16 @@ for /f "tokens=1,2 delims=/" %%a in ("!source_fps_raw!") do (
     set /a "source_fps=!source_fps_num! / !source_fps_den!"
 )
 
+REM Calculate frame count if not available
+if "!frame_count!"=="" (
+    set /a "frame_count=!source_fps! * !total_duration!"
+)
+
 REM Display video information
 echo Input file: %input_file%
 echo Resolution: %original_width%x%original_height%
 echo Duration: %total_duration% seconds
-echo Frame count: %frame_count%
+echo Frame count: %frame_count% frames
 echo Color space: %colorspace%
 echo Source FPS: %source_fps% ^(%source_fps_raw%^)
 echo =====================================
@@ -64,11 +70,10 @@ if not defined original_height (
 
 REM Display initial start time and accept input
 :input_start_time
-set /p "start_time=start time (seconds, up to 3 decimal places)=%start_time% or start time=" <nul
+set /p "start_time=start time (seconds, up to 3 decimal places, 0-%total_duration%)=%start_time% or start time=" <nul
 set /p "start_time="
 if "%start_time%"=="" set "start_time=0.000"
 
-REM Validate start time format (allows numbers and single decimal point)
 set "invalid_char="
 for /f "delims=0123456789." %%a in ("%start_time%") do set "invalid_char=%%a"
 if defined invalid_char (
@@ -77,7 +82,6 @@ if defined invalid_char (
     goto input_start_time
 )
 
-REM Count decimal points
 set "temp_start=%start_time%"
 set "decimal_count=0"
 :count_decimals_start
@@ -93,7 +97,6 @@ if %decimal_count% GTR 1 (
     goto input_start_time
 )
 
-REM Format start time to three decimal places
 if not "!start_time:~-4,1!"=="." (
     if not "!start_time:~-3,1!"=="." (
         if not "!start_time:~-2,1!"=="." (
@@ -110,12 +113,19 @@ if not "!start_time:~-4,1!"=="." (
     )
 )
 
+set /a "start_time_int=start_time"
+set /a "total_duration_int=total_duration"
+if !start_time_int! GEQ !total_duration_int! (
+    echo Start time ^(!start_time!^) must be less than video length ^(!total_duration! seconds^).
+    set "start_time=0.000"
+    goto input_start_time
+)
+
 REM Display duration input and validate
 :input_duration
 set /p "duration=duration (seconds, up to 3 decimal places, leave empty for full length)=" <nul
 set /p "duration="
 if not "%duration%"=="" (
-    REM Validate duration format
     set "invalid_char="
     for /f "delims=0123456789." %%a in ("%duration%") do set "invalid_char=%%a"
     if defined invalid_char (
@@ -124,7 +134,6 @@ if not "%duration%"=="" (
         goto input_duration
     )
 
-    REM Count decimal points
     set "temp_duration=%duration%"
     set "decimal_count=0"
     :count_decimals_duration
@@ -141,7 +150,6 @@ if not "%duration%"=="" (
         goto input_duration
     )
 
-    REM Format duration to three decimal places
     if not "!duration:~-4,1!"=="." (
         if not "!duration:~-3,1!"=="." (
             if not "!duration:~-2,1!"=="." (
@@ -156,6 +164,20 @@ if not "%duration%"=="" (
         ) else (
             set "duration=!duration!0"
         )
+    )
+
+    set /a "duration_int=duration"
+    if !duration_int! GTR !total_duration_int! (
+        echo Duration exceeds video length ^(!total_duration! seconds^).
+        set "duration="
+        goto input_duration
+    )
+
+    set /a "end_time=start_time_int + duration_int"
+    if !end_time! GTR !total_duration_int! (
+        echo Start time ^(!start_time!^) plus duration ^(!duration!^) exceeds video length ^(!total_duration! seconds^).
+        set "duration="
+        goto input_duration
     )
 )
 
@@ -306,7 +328,7 @@ if exist "%output_file%" (
     if not "%duration%"=="" echo Trimmed duration: %duration% seconds
     echo Source FPS: %source_fps%
     echo Output FPS: %fps%
-    echo Output file size: %filesize% bytes ^(%target_size_mb%MB target^)
+    echo Output file size: %filesize% bytes ^(%target_size% bytes target^)
     echo Total tries: %tries%
     echo ====================================
 ) else (
