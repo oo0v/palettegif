@@ -1,34 +1,30 @@
 @echo off
 setlocal enabledelayedexpansion
 
-REM Set initial values
 set "initial_fps=20"
 set "fps=%initial_fps%"
 set "initial_target_size_mb=15"
 set "target_size_mb=%initial_target_size_mb%"
 set "min_height=40"
 set "max_tries=10"
-set "start_time=0.000"
+set "start_time=0"
 set "duration="
 
-REM Get input file
 set "input_file=%~1"
 
-REM Exit if no input file is specified
 if "%input_file%"=="" (
     echo No input file specified.
     pause
     exit /b 1
 )
 
-REM Get and display video information
-echo ========== Video Information ==========
-REM Get video duration
-for /f "tokens=1,2" %%a in ('ffprobe -v error -show_entries format^=duration -of default^=noprint_wrappers^=1:nokey^=1 "%input_file%"') do (
-    set "total_duration=%%a"
+for /f "tokens=1,2 delims=." %%a in ('ffprobe -v error -show_entries format^=duration -of default^=noprint_wrappers^=1:nokey^=1 "%input_file%"') do (
+    set "total_duration_int=%%a"
+    set "total_duration=%%a.%%b"
+    set /a "total_minutes=%%a/60"
+    set /a "total_seconds=%%a%%60"
 )
 
-REM Get resolution, fps, and color space
 for /f "tokens=*" %%a in ('ffprobe -v error -select_streams v:0 -show_entries "stream=width,height,r_frame_rate,nb_frames,pix_fmt" -of csv^=s^=x:p^=0 "%input_file%"') do (
     for /f "tokens=1-5 delims=x," %%b in ("%%a") do (
         set "original_width=%%b"
@@ -39,149 +35,117 @@ for /f "tokens=*" %%a in ('ffprobe -v error -select_streams v:0 -show_entries "s
     )
 )
 
-REM Calculate actual FPS from fraction
 for /f "tokens=1,2 delims=/" %%a in ("!source_fps_raw!") do (
     set /a "source_fps_num=%%a"
     set /a "source_fps_den=%%b"
     set /a "source_fps=!source_fps_num! / !source_fps_den!"
 )
 
-REM Calculate frame count if not available
 if "!frame_count!"=="" (
-    set /a "frame_count=!source_fps! * !total_duration!"
+    set /a "frame_count=!source_fps! * !total_duration_int!"
 )
 
-REM Display video information
+set "padded_total_seconds=0!total_seconds!"
+set "padded_total_seconds=!padded_total_seconds:~-2!"
+
 echo Input file: %input_file%
 echo Resolution: %original_width%x%original_height%
-echo Duration: %total_duration% seconds
+echo Duration: %total_minutes%:!padded_total_seconds! ^(Total: %total_duration% seconds^)
 echo Frame count: %frame_count% frames
 echo Color space: %colorspace%
 echo Source FPS: %source_fps% ^(%source_fps_raw%^)
 echo =====================================
 echo.
 
-REM Check if height information was retrieved
-if not defined original_height (
-    echo The input file is not a supported video format or height information couldnt be retrieved.
-    pause
-    exit /b 1
-)
+:main_input_loop
+set "start_time=0"
+set "duration="
+call :update_timeline
 
-REM Display initial start time and accept input
 :input_start_time
-set /p "start_time=start time (seconds, up to 3 decimal places, 0-%total_duration%)=%start_time% or start time=" <nul
-set /p "start_time="
-if "%start_time%"=="" set "start_time=0.000"
-
-set "invalid_char="
-for /f "delims=0123456789." %%a in ("%start_time%") do set "invalid_char=%%a"
-if defined invalid_char (
-    set "start_time=0.000"
-    echo Invalid character in start time. Please use numbers and decimal point only.
-    goto input_start_time
+set /p "start_time_input=Start time (mm:ss or seconds, max %total_minutes%:!padded_total_seconds!)=" || set "start_time_input="
+if "%start_time_input%"=="" (
+    set "start_time=0"
+    goto check_start_time
 )
 
-set "temp_start=%start_time%"
-set "decimal_count=0"
-:count_decimals_start
-if "!temp_start:~0,1!"=="." (
-    set /a "decimal_count+=1"
-)
-if not "!temp_start!"=="" (
-    set "temp_start=!temp_start:~1!"
-    goto count_decimals_start
-)
-if %decimal_count% GTR 1 (
-    echo Too many decimal points in start time.
-    goto input_start_time
-)
-
-if not "!start_time:~-4,1!"=="." (
-    if not "!start_time:~-3,1!"=="." (
-        if not "!start_time:~-2,1!"=="." (
-            if not "!start_time:~-1,1!"=="." (
-                set "start_time=!start_time!.000"
-            ) else (
-                set "start_time=!start_time!000"
-            )
-        ) else (
-            set "start_time=!start_time!00"
+echo.%start_time_input%| findstr /r "^[0-9][0-9]*:[0-9][0-9]*$" >nul
+if !errorlevel! equ 0 (
+    for /f "tokens=1,2 delims=:" %%a in ("%start_time_input%") do (
+        set /a "temp_sec=%%b"
+        if !temp_sec! GEQ 60 (
+            echo Invalid seconds value. Seconds must be less than 60.
+            goto input_start_time
         )
+        set /a "start_time=%%a * 60 + %%b"
+    )
+) else (
+    echo.%start_time_input%| findstr /r "^[0-9][0-9]*$" >nul
+    if !errorlevel! equ 0 (
+        set "start_time=%start_time_input%"
     ) else (
-        set "start_time=!start_time!0"
+        echo Invalid format. Please use either:
+        echo  - mm:ss format ^(e.g. 1:30, 0:45^)
+        echo  - seconds only ^(e.g. 90, 45^)
+        goto input_start_time
     )
 )
 
-set /a "start_time_int=start_time"
-set /a "total_duration_int=total_duration"
-if !start_time_int! GEQ !total_duration_int! (
-    echo Start time ^(!start_time!^) must be less than video length ^(!total_duration! seconds^).
-    set "start_time=0.000"
+:check_start_time
+if !start_time! GEQ !total_duration_int! (
+    echo Start time ^(!start_time! seconds^) must be less than video length ^(!total_duration! seconds^).
     goto input_start_time
 )
 
-REM Display duration input and validate
+call :update_timeline
+
 :input_duration
-set /p "duration=duration (seconds, up to 3 decimal places, leave empty for full length)=" <nul
-set /p "duration="
-if not "%duration%"=="" (
-    set "invalid_char="
-    for /f "delims=0123456789." %%a in ("%duration%") do set "invalid_char=%%a"
-    if defined invalid_char (
-        echo Invalid character in duration. Please use numbers and decimal point only.
-        set "duration="
-        goto input_duration
-    )
+set /p "duration_input=Duration (mm:ss or seconds, leave empty for full length)=" || set "duration_input="
+if "%duration_input%"=="" (
+    set "duration="
+    goto confirm_range
+)
 
-    set "temp_duration=%duration%"
-    set "decimal_count=0"
-    :count_decimals_duration
-    if "!temp_duration:~0,1!"=="." (
-        set /a "decimal_count+=1"
-    )
-    if not "!temp_duration!"=="" (
-        set "temp_duration=!temp_duration:~1!"
-        goto count_decimals_duration
-    )
-    if %decimal_count% GTR 1 (
-        echo Too many decimal points in duration.
-        set "duration="
-        goto input_duration
-    )
-
-    if not "!duration:~-4,1!"=="." (
-        if not "!duration:~-3,1!"=="." (
-            if not "!duration:~-2,1!"=="." (
-                if not "!duration:~-1,1!"=="." (
-                    set "duration=!duration!.000"
-                ) else (
-                    set "duration=!duration!000"
-                )
-            ) else (
-                set "duration=!duration!00"
-            )
-        ) else (
-            set "duration=!duration!0"
+echo.%duration_input%| findstr /r "^[0-9][0-9]*:[0-9][0-9]*$" >nul
+if !errorlevel! equ 0 (
+    for /f "tokens=1,2 delims=:" %%a in ("%duration_input%") do (
+        set /a "temp_sec=%%b"
+        if !temp_sec! GEQ 60 (
+            echo Invalid seconds value. Seconds must be less than 60.
+            goto input_duration
         )
+        set /a "duration=%%a * 60 + %%b"
     )
-
-    set /a "duration_int=duration"
-    if !duration_int! GTR !total_duration_int! (
-        echo Duration exceeds video length ^(!total_duration! seconds^).
-        set "duration="
-        goto input_duration
-    )
-
-    set /a "end_time=start_time_int + duration_int"
-    if !end_time! GTR !total_duration_int! (
-        echo Start time ^(!start_time!^) plus duration ^(!duration!^) exceeds video length ^(!total_duration! seconds^).
-        set "duration="
+) else (
+    echo.%duration_input%| findstr /r "^[0-9][0-9]*$" >nul
+    if !errorlevel! equ 0 (
+        set "duration=%duration_input%"
+    ) else (
+        echo Invalid format. Please use either:
+        echo  - mm:ss format ^(e.g. 1:30, 0:45^)
+        echo  - seconds only ^(e.g. 90, 45^)
         goto input_duration
     )
 )
 
-REM Display initial FPS and accept input
+set /a "end_time=%start_time% + %duration%"
+if !end_time! GTR !total_duration_int! (
+    echo Duration is too long. Maximum duration from start point is !total_duration_int! seconds.
+    set "duration="
+    goto input_duration
+)
+
+:confirm_range
+call :update_timeline
+set /p "confirm=Is this range correct? (y/n): "
+if /i "!confirm!"=="y" (
+    goto input_fps
+) else if /i "!confirm!"=="n" (
+    goto main_input_loop
+) else (
+    goto confirm_range
+)
+
 :input_fps
 echo Source FPS: %source_fps%
 set /p "fps=fps=%fps% or fps=" <nul
@@ -195,7 +159,6 @@ if defined non_numeric (
     goto input_fps
 )
 
-REM Display initial height and accept input
 :input_height
 echo Current resolution: %original_width%x%original_height%
 set /p "height=height=%original_height% or height=" <nul
@@ -209,7 +172,6 @@ if defined non_numeric (
     goto input_height
 )
 
-REM Display initial target size and accept input
 :input_size
 set /p "target_size_mb=size=%target_size_mb%mb or size=" <nul
 set /p "target_size_mb="
@@ -222,28 +184,73 @@ if defined non_numeric (
     goto input_size
 )
 
-REM Calculate target size in bytes
+goto start_conversion
+
+:update_timeline
+set "timeline_width=50"
+set "timeline="
+for /l %%i in (0,1,%timeline_width%) do (
+    set /a "current_pos=%%i * total_duration_int / timeline_width"
+    if !current_pos! GEQ !start_time! (
+        if defined duration (
+            set /a "end_time=start_time + duration"
+            if !current_pos! LSS !end_time! (
+                set "timeline=!timeline!#"
+            ) else (
+                set "timeline=!timeline!-"
+            )
+        ) else (
+            set "timeline=!timeline!#"
+        )
+    ) else (
+        set "timeline=!timeline!-"
+    )
+)
+
+set /a "start_minutes=start_time / 60"
+set /a "start_seconds=start_time %% 60"
+set "padded_start_seconds=0!start_seconds!"
+set "padded_start_seconds=!padded_start_seconds:~-2!"
+
+echo.
+echo Video Timeline
+echo [!timeline!]
+echo.
+
+if "!duration!"=="" (
+    echo Selected: !start_minutes!:!padded_start_seconds! - Full length
+) else (
+    set /a "end_time=start_time + duration"
+    set /a "end_minutes=end_time / 60"
+    set /a "end_seconds=end_time %% 60"
+    set "padded_end_seconds=0!end_seconds!"
+    set "padded_end_seconds=!padded_end_seconds:~-2!"
+    
+    set /a "duration_minutes=duration / 60"
+    set /a "duration_seconds=duration %% 60"
+    set "padded_duration_seconds=0!duration_seconds!"
+    set "padded_duration_seconds=!padded_duration_seconds:~-2!"
+    
+    echo Selected: !start_minutes!:!padded_start_seconds! - !end_minutes!:!padded_end_seconds! ^(Duration: !duration_minutes!:!padded_duration_seconds!^)
+)
+echo.
+exit /b
+
+:start_conversion
 set /a "target_size=%target_size_mb% * 1024 * 1024"
-
-REM Set output file name
 set "output_file=%~dpn1.gif"
-
-REM Initialize binary search variables
 set /a "low_height=%min_height%"
 set /a "high_height=%height%"
 set "tries=0"
 
-REM Prepare time trim parameters
 set "trim_params=-ss %start_time%"
 if not "%duration%"=="" (
     set "trim_params=!trim_params! -t %duration%"
 )
 
 :generate_gif
-REM Set temporary palette file name
 set "palette_file=%~dpn1_palette.png"
 
-REM Set current height for the first try
 if %tries%==0 (
     set "current_height=%height%"
 ) else (
@@ -256,7 +263,6 @@ echo ========== Trial %tries% of %max_tries% ==========
 echo Attempting with height: !current_height!
 echo Time parameters: Start=%start_time%s Duration=%duration%s
 
-REM Generate palette
 ffmpeg -y -v warning -stats %trim_params% -i "%input_file%" -vf "fps=%fps%,scale=-1:!current_height!:flags=spline,palettegen" -update 1 -frames:v 1 "%palette_file%"
 if errorlevel 1 (
     echo Error occurred while generating palette.
@@ -265,7 +271,6 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM Generate GIF
 ffmpeg -y -v warning -stats %trim_params% -i "%input_file%" -i "%palette_file%" -filter_complex "[0:v] fps=%fps%,scale=-1:!current_height!:flags=spline [x]; [x][1:v] paletteuse" -c:v gif "%output_file%"
 if errorlevel 1 (
     echo Error occurred while generating GIF.
@@ -274,15 +279,12 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM Get output file size
 for %%I in ("%output_file%") do set "filesize=%%~zI"
 
 echo Trial %tries%: Current file size: !filesize! bytes
 
-REM Delete temporary palette file
 if exist "%palette_file%" del "%palette_file%"
 
-REM Size check and binary search
 if !filesize! GTR %target_size% (
     if !tries!==1 (
         echo.
@@ -316,7 +318,6 @@ if !filesize! GTR %target_size% (
 )
 
 :end
-REM Notify completion and display final information
 if exist "%output_file%" (
     echo.
     echo ========== Conversion Complete ==========
