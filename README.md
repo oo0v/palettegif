@@ -29,4 +29,4 @@ Either:
 
 ## License
 
-MIT License
+CC0 License
