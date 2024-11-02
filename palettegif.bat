@@ -696,10 +696,11 @@ exit /b 0
         echo Output file size: !filesize! bytes (!target_size! bytes target)
         echo Total tries: !tries!
         echo ====================================
+        exit /b 0
     ) else (
         call :show_error "No output file generated."
+        exit /b 1
     )
-exit /b 0
 
 :show_error
     echo Error: %~1
