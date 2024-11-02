@@ -6,7 +6,6 @@ Batch script for converting video files to GIFs with optimized palettes and file
 
 - Windows 7+
 - FFmpeg in PATH
-- 2GB+ RAM recommended
 
 ## Features
 
@@ -14,7 +13,6 @@ Batch script for converting video files to GIFs with optimized palettes and file
 - Automatic palette optimization
 - Smart file size control via binary search
 - Customizable FPS, resolution, and target size
-- Visual timeline display
 
 ## Usage
 
