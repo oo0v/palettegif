@@ -1,15 +1,9 @@
 @echo off
 setlocal enabledelayedexpansion
 
-:: ============================================
-:: Configuration Variables
-:: ============================================
-call :init_config
-if errorlevel 1 goto error_exit
-
-:: ============================================
-:: Main
-:: ============================================
+REM ============================================
+REM Main
+REM ============================================
 call :init_config
 if errorlevel 1 goto error_exit
 
@@ -42,7 +36,7 @@ if /i "!specify_time!"=="y" (
     
     set "start_time_whole=0"
     set "start_time=0.0"
-    set /a "end_time_whole=!total_minutes! * 60 + !end_seconds!"
+    set /a "end_time_whole=!total_minutes! * 60 + !total_seconds!"
     set "end_time=!end_time_whole!.!total_seconds_decimal!"
     
     call :calculate_duration
@@ -59,61 +53,61 @@ if /i "!specify_time!"=="y" (
     goto ask_time_range
 )
 
-    call :get_conversion_parameters
+call :get_conversion_parameters
+if errorlevel 1 goto error_exit
+
+set "output_file=%~dpn1.gif"
+
+echo.
+echo ========== Conversion Summary ==========
+echo Input: !input_file!
+echo Output: !output_file!
+echo Time range: !start_time! - !end_time!
+echo Duration: !duration!
+echo Output FPS: !fps!
+echo Height: !height!
+echo Target size: !target_size_mb! MB
+echo ======================================
+echo.
+
+:confirm_conversion
+set /p "confirm=Start conversion? (y/n): "
+if /i "!confirm!"=="n" (
+    echo Conversion cancelled.
+    goto end_script
+)
+if /i "!confirm!"=="y" (
+    call :process_gif
     if errorlevel 1 goto error_exit
 
-    :: Generate output filename (remove any existing extension and add .gif)
-    set "output_file=%~dpn1.gif"
+    call :display_results
+    goto end_script
+)
+echo Please enter 'y' or 'n'
+goto confirm_conversion
 
-    echo.
-    echo ========== Conversion Summary ==========
-    echo Input: !input_file!
-    echo Output: !output_file!
-    echo Time range: !start_time! - !end_time!
-    echo Duration: !duration!
-    echo Output FPS: !fps!
-    echo Height: !height!
-    echo Target size: !target_size_mb! MB
-    echo ======================================
-    echo.
-    
-    :confirm_conversion
-    set /p "confirm=Start conversion? (y/n): "
-    if /i "!confirm!"=="n" (
-        echo Conversion cancelled.
-        goto end_script
-    )
-    if /i "!confirm!"=="y" (
-        call :process_gif
-        if errorlevel 1 goto error_exit
+REM ============================================
+REM Functions
+REM ============================================
 
-        call :display_results
-        goto end_script
-    )
-    echo Please enter 'y' or 'n'
-    goto confirm_conversion
-
-goto main_loop
-
-:: ============================================
-:: Functions
-:: ============================================
-
+REM -----------------------------------------
+REM Initialize Config
+REM -----------------------------------------
 :init_config
-    :: Initial configuration values
+    REM Initial configuration values
     set "CONFIG_INITIAL_FPS=20"
     set "CONFIG_INITIAL_TARGET_SIZE_MB=15"
     set "CONFIG_MIN_HEIGHT=40"
     set "CONFIG_MAX_TRIES=10"
     set "CONFIG_TIMELINE_WIDTH=50"
 
-    :: Working variables
+    REM Working variables
     set "fps=!CONFIG_INITIAL_FPS!"
     set "target_size_mb=!CONFIG_INITIAL_TARGET_SIZE_MB!"
     set "min_height=!CONFIG_MIN_HEIGHT!"
     set "max_tries=!CONFIG_MAX_TRIES!"
     
-    :: Time variables initialization
+    REM Time variables initialization
     set "start_min=0"
     set "start_sec=0"
     set "start_sec_decimal=0"
@@ -122,10 +116,13 @@ goto main_loop
     set "end_sec_decimal=0"
 exit /b 0
 
+REM -----------------------------------------
+REM Get Video Info
+REM -----------------------------------------
 :get_video_info
     set "video_file=%~1"
     
-    :: Get duration
+    REM Get duration
     for /f "tokens=1,2 delims=." %%a in ('ffprobe -v error -show_entries format^=duration -of default^=noprint_wrappers^=1:nokey^=1 "!video_file!"') do (
         set "total_duration_int=%%a"
         set "total_duration=%%a.%%b"
@@ -134,7 +131,7 @@ exit /b 0
         set "total_seconds_decimal=%%b"
     )
 
-    :: Get video properties
+    REM Get video properties
     for /f "tokens=*" %%a in ('ffprobe -v error -select_streams v:0 -show_entries "stream=width,height,r_frame_rate,nb_frames,pix_fmt" -of csv^=s^=x:p^=0 "!video_file!"') do (
         for /f "tokens=1-5 delims=x," %%b in ("%%a") do (
             set "original_width=%%b"
@@ -145,10 +142,12 @@ exit /b 0
         )
     )
 
-    :: Calculate source FPS
     call :calculate_source_fps
 exit /b 0
 
+REM -----------------------------------------
+REM Calculate Source FPS
+REM -----------------------------------------
 :calculate_source_fps
     for /f "tokens=1,2 delims=/" %%a in ("!source_fps_raw!") do (
         set /a "source_fps_num=%%a"
@@ -161,6 +160,9 @@ exit /b 0
     )
 exit /b 0
 
+REM -----------------------------------------
+REM Display Video Info
+REM -----------------------------------------
 :display_video_info
     set "padded_total_seconds=0!total_seconds!"
     set "padded_total_seconds=!padded_total_seconds:~-2!"
@@ -174,18 +176,50 @@ exit /b 0
     echo.
 exit /b 0
 
+REM -----------------------------------------
+REM Display Intermediate Timeline
+REM -----------------------------------------
+:display_intermediate_timeline
+    REM Format start time for display
+    set "padded_start_seconds=0!start_sec!"
+    set "padded_start_seconds=!padded_start_seconds:~-2!"
+
+    REM Initialize timeline
+    set "timeline="
+    
+    REM Generate timeline visualization
+    set /a "total_positions=!CONFIG_TIMELINE_WIDTH!-1"
+    for /l %%i in (0,1,!total_positions!) do (
+        set /a "current_pos=%%i * total_duration_int / total_positions"
+        if !current_pos! GEQ !start_time_whole! (
+            set "timeline=!timeline!#"
+        ) else (
+            set "timeline=!timeline!-"
+        )
+    )
+
+    echo.
+    echo Video Timeline  [!total_minutes!:!padded_total_seconds!.!total_seconds_decimal! total]
+    echo [!timeline!]
+    echo  !start_min!:!padded_start_seconds!.!start_sec_decimal! (Start Position)
+    echo.
+exit /b 0
+
+REM -----------------------------------------
+REM Get Time Range
+REM -----------------------------------------
 :get_time_range
-    :: Get start time
+    REM Get start time
     :time_input_loop
     call :get_start_time
     if errorlevel 1 goto time_input_loop
 
-    :: Get end time and validate duration
+    REM Get end time and validate duration
     :end_time_loop
     call :get_end_time
     if errorlevel 1 goto end_time_loop
 
-    :: Calculate and validate duration
+    REM Calculate and validate duration
     call :calculate_duration
     if errorlevel 1 (
         echo Press Enter to retry time input...
@@ -194,24 +228,27 @@ exit /b 0
         goto time_input_loop
     )
 
-    :: Display and confirm time range
+    REM Display and confirm time range
     call :display_timeline
     call :confirm_time_range
     if errorlevel 1 goto time_input_loop
 exit /b 0
 
+REM -----------------------------------------
+REM Get Start Time
+REM -----------------------------------------
 :get_start_time
     echo Maximum time is !total_minutes!:!padded_total_seconds!.!total_seconds_decimal!
     echo Press Enter without input to start from beginning (0:00.000)
     echo.
     
     :start_time_input_loop
-    :: Initialize with default values
+    REM Initialize with default values
     set "start_min=0"
     set "start_sec=0"
     set "start_sec_decimal=0"
 
-    :: Get and display minutes
+    REM Get and display minutes
     set /p "temp_input=Start minutes (0-!total_minutes!): "
     if "!temp_input!"=="" (
         echo 0
@@ -223,7 +260,7 @@ exit /b 0
         set "start_min=!temp_input!"
     )
     
-    :: Get and display seconds
+    REM Get and display seconds
     set /p "temp_input=Start seconds (0-59): "
     if "!temp_input!"=="" (
         echo 0
@@ -235,7 +272,7 @@ exit /b 0
         set "start_sec=!temp_input!"
     )
     
-    :: Get and display decimal seconds
+    REM Get and display decimal seconds
     set /p "temp_input=Start seconds decimal (0-999): "
     if "!temp_input!"=="" (
         echo 0
@@ -247,56 +284,29 @@ exit /b 0
         set "start_sec_decimal=!temp_input!"
     )
 
-    :: Set start time values
     set /a "start_time_whole=!start_min! * 60 + !start_sec!"
     set "start_time=!start_time_whole!.!start_sec_decimal!"
 
-    :: Display intermediate timeline after start time input
     call :display_intermediate_timeline
     
-    :: Show selected start time
     echo Selected start time: !start_min!:!padded_start_seconds!.!start_sec_decimal!
     echo.
 exit /b 0
 
-:display_intermediate_timeline
-    :: Format start time for display
-    set "padded_start_seconds=0!start_sec!"
-    set "padded_start_seconds=!padded_start_seconds:~-2!"
-
-    :: Initialize timeline
-    set "timeline="
-    
-    :: Generate timeline visualization
-    set /a "total_positions=!CONFIG_TIMELINE_WIDTH!-1"
-    for /l %%i in (0,1,!total_positions!) do (
-        set /a "current_pos=%%i * total_duration_int / total_positions"
-        if !current_pos! GEQ !start_time_whole! (
-            set "timeline=!timeline!#"
-        ) else (
-            set "timeline=!timeline!-"
-        )
-    )
-
-    :: Display timeline
-    echo.
-    echo Video Timeline  [!total_minutes!:!padded_total_seconds!.!total_seconds_decimal! total]
-    echo [!timeline!]
-    echo  !start_min!:!padded_start_seconds!.!start_sec_decimal! (Start Position)
-    echo.
-exit /b 0
-
+REM -----------------------------------------
+REM Get End Time
+REM -----------------------------------------
 :get_end_time
     echo Press Enter without input to use full video length (!total_minutes!:!padded_total_seconds!.!total_seconds_decimal!)
     echo.
 
     :end_time_input_loop
-    :: Initialize with default values
+    REM Initialize with default values
     set "end_min=!total_minutes!"
     set "end_sec=!total_seconds!"
     set "end_sec_decimal=!total_seconds_decimal!"
 
-    :: Get and display minutes
+    REM Get and display minutes
     set /p "temp_input=End minutes (0-!total_minutes!): "
     if "!temp_input!"=="" (
         echo !total_minutes!
@@ -308,7 +318,7 @@ exit /b 0
         set "end_min=!temp_input!"
     )
     
-    :: Get and display seconds
+    REM Get and display seconds
     set /p "temp_input=End seconds (0-59): "
     if "!temp_input!"=="" (
         echo !total_seconds!
@@ -320,7 +330,7 @@ exit /b 0
         set "end_sec=!temp_input!"
     )
     
-    :: Get and display decimal seconds
+    REM Get and display decimal seconds
     set /p "temp_input=End seconds decimal (0-999): "
     if "!temp_input!"=="" (
         echo !total_seconds_decimal!
@@ -332,7 +342,7 @@ exit /b 0
         set "end_sec_decimal=!temp_input!"
     )
 
-    :: Calculate total seconds and validate against maximum time
+    REM Calculate total seconds and validate against maximum time
     set /a "end_time_whole=!end_min! * 60 + !end_sec!"
     set /a "total_time_whole=!total_minutes! * 60 + !total_seconds!"
 
@@ -347,117 +357,26 @@ exit /b 0
         )
     )
 
-    :: Set end time values
+    REM Set end time values
     set "end_time=!end_time_whole!.!end_sec_decimal!"
 
-    :: Format end time display (add padding)
+    REM Format end time display (add padding)
     set "padded_end_seconds=0!end_sec!"
     set "padded_end_seconds=!padded_end_seconds:~-2!"
 
-    :: Show selected end time
+    REM Show selected end time
     echo Selected end time: !end_min!:!padded_end_seconds!.!end_sec_decimal!
     echo.
 exit /b 0
 
-:display_timeline
-    :: Initialize timeline variables
-    set "timeline="
-    set "has_hash="
-    
-    :: Generate timeline visualization
-    set /a "total_positions=!CONFIG_TIMELINE_WIDTH!-1"
-    for /l %%i in (0,1,!total_positions!) do (
-        set /a "current_pos=%%i * total_duration_int / total_positions"
-        if !current_pos! GEQ !start_time_whole! (
-            if defined duration (
-                set /a "end_pos=start_time_whole + duration_whole"
-                if !current_pos! LEQ !end_pos! (
-                    set "timeline=!timeline!#"
-                    set "has_hash=1"
-                ) else (
-                    set "timeline=!timeline!-"
-                )
-            ) else (
-                set "timeline=!timeline!#"
-                set "has_hash=1"
-            )
-        ) else (
-            set "timeline=!timeline!-"
-        )
-    )
-
-    :: Format time display
-    call :format_time_display
-
-    :: Calculate middle points for timeline markers
-    if defined duration (
-        set /a "mid_time_whole=(start_time_whole + end_time_whole) / 2"
-        set /a "quarter_time_whole=(start_time_whole * 3 + end_time_whole) / 4"
-        set /a "three_quarter_time_whole=(start_time_whole + end_time_whole * 3) / 4"
-        
-        set /a "mid_min=mid_time_whole / 60"
-        set /a "mid_sec=mid_time_whole %% 60"
-        set "padded_mid_sec=0!mid_sec!"
-        set "padded_mid_sec=!padded_mid_sec:~-2!"
-
-        set /a "quarter_min=quarter_time_whole / 60"
-        set /a "quarter_sec=quarter_time_whole %% 60"
-        set "padded_quarter_sec=0!quarter_sec!"
-        set "padded_quarter_sec=!padded_quarter_sec:~-2!"
-
-        set /a "three_quarter_min=three_quarter_time_whole / 60"
-        set /a "three_quarter_sec=three_quarter_time_whole %% 60"
-        set "padded_three_quarter_sec=0!three_quarter_sec!"
-        set "padded_three_quarter_sec=!padded_three_quarter_sec:~-2!"
-    )
-
-    :: Display timeline and time information
-    echo.
-    echo Video Timeline  [!total_minutes!:!padded_total_seconds!.!total_seconds_decimal! total]
-    echo [!timeline!]
-    echo  !start_min!:!padded_start_seconds!.!start_sec_decimal!
-    if defined duration (
-        echo  !quarter_min!:!padded_quarter_sec!
-        echo  !mid_min!:!padded_mid_sec!
-        echo  !three_quarter_min!:!padded_three_quarter_sec!
-        echo  !end_min!:!padded_end_seconds!.!end_sec_decimal!
-    ) else (
-        echo  (Full length)
-    )
-    echo.
-    
-    if not defined duration (
-        echo Selected: !start_min!:!padded_start_seconds!.!start_sec_decimal! - Full length
-    ) else (
-        echo Selected: !start_min!:!padded_start_seconds!.!start_sec_decimal! - !end_min!:!padded_end_seconds!.!end_sec_decimal!
-        echo Duration: !duration_minutes!:!padded_duration_seconds!.!duration_decimal!
-    )
-    echo.
-exit /b 0
-
-:format_time_display
-    :: Format start time
-    set "padded_start_seconds=0!start_sec!"
-    set "padded_start_seconds=!padded_start_seconds:~-2!"
-
-    :: Format end time if defined
-    if defined duration (
-        set "padded_end_seconds=0!end_sec!"
-        set "padded_end_seconds=!padded_end_seconds:~-2!"
-        
-        :: Calculate duration display
-        set /a "duration_minutes=duration_whole / 60"
-        set /a "duration_seconds=duration_whole %% 60"
-        set "padded_duration_seconds=0!duration_seconds!"
-        set "padded_duration_seconds=!padded_duration_seconds:~-2!"
-    )
-exit /b 0
-
+REM -----------------------------------------
+REM Calculate Duration
+REM -----------------------------------------
 :calculate_duration
-    :: Calculate whole seconds duration
+    REM Calculate whole seconds duration
     set /a "duration_whole=end_time_whole - start_time_whole"
 
-    :: Calculate decimal part of duration
+    REM Calculate decimal part of duration
     if !end_sec_decimal! GEQ !start_sec_decimal! (
         set "duration_decimal=!end_sec_decimal!"
     ) else (
@@ -465,7 +384,7 @@ exit /b 0
         set /a "duration_decimal=1000 + !end_sec_decimal! - !start_sec_decimal!"
     )
 
-    :: Ensure duration is positive
+    REM Ensure duration is positive
     if !duration_whole! LSS 0 (
         call :show_error "Invalid duration: end time must be after start time."
         exit /b 1
@@ -480,6 +399,9 @@ exit /b 0
     set "duration=!duration_whole!.!duration_decimal!"
 exit /b 0
 
+REM -----------------------------------------
+REM Confirm Time Range
+REM -----------------------------------------
 :confirm_time_range
     :confirm_loop
     set /p "confirm=Is this range correct? (y/n): "
@@ -494,6 +416,9 @@ exit /b 0
     goto confirm_loop
 exit /b 0
 
+REM -----------------------------------------
+REM Get Conversion Parameters
+REM -----------------------------------------
 :get_conversion_parameters
     call :get_fps_input
     if errorlevel 1 exit /b 1
@@ -505,6 +430,9 @@ exit /b 0
     if errorlevel 1 exit /b 1
 exit /b 0
 
+REM -----------------------------------------
+REM Get FPS Input
+REM -----------------------------------------
 :get_fps_input
     echo.
     echo Source FPS: !source_fps!
@@ -512,7 +440,6 @@ exit /b 0
     set /p "fps="
     if "!fps!"=="" set "fps=!CONFIG_INITIAL_FPS!"
     
-    :: Validate FPS input
     set "non_numeric="
     for /f "delims=0123456789" %%a in ("!fps!") do set "non_numeric=%%a"
     if defined non_numeric (
@@ -531,6 +458,9 @@ exit /b 0
     )
 exit /b 0
 
+REM -----------------------------------------
+REM Get Height Input
+REM -----------------------------------------
 :get_height_input
     echo.
     echo Current resolution: !original_width!x!original_height!
@@ -538,7 +468,6 @@ exit /b 0
     set /p "height="
     if "!height!"=="" set "height=!original_height!"
     
-    :: Validate height input
     set "non_numeric="
     for /f "delims=0123456789" %%a in ("!height!") do set "non_numeric=%%a"
     if defined non_numeric (
@@ -557,13 +486,15 @@ exit /b 0
     )
 exit /b 0
 
+REM -----------------------------------------
+REM Get Size Input
+REM -----------------------------------------
 :get_size_input
     echo.
     set /p "target_size_mb=size=!target_size_mb!mb or size=" <nul
     set /p "target_size_mb="
     if "!target_size_mb!"=="" set "target_size_mb=!CONFIG_INITIAL_TARGET_SIZE_MB!"
     
-    :: Validate size input
     set "non_numeric="
     for /f "delims=0123456789" %%a in ("!target_size_mb!") do set "non_numeric=%%a"
     if defined non_numeric (
@@ -578,6 +509,9 @@ exit /b 0
     set /a "target_size=!target_size_mb! * 1024 * 1024"
 exit /b 0
 
+REM -----------------------------------------
+REM Process GIF
+REM -----------------------------------------
 :process_gif
     set "output_file=!input_file!.gif"
     set "palette_file=!input_file!_palette.png"
@@ -586,6 +520,14 @@ exit /b 0
     set "output_file=!output_file:.mp4.gif=.gif!"
     set "output_file=!output_file:.avi.gif=.gif!"
     set "output_file=!output_file:.wmv.gif=.gif!"
+    set "output_file=!output_file:.av1.gif=.gif!"
+    set "output_file=!output_file:.flv.gif=.gif!"
+    set "output_file=!output_file:.mkv.gif=.gif!"
+    set "output_file=!output_file:.mpg.gif=.gif!"
+    set "output_file=!output_file:.3gp.gif=.gif!"
+    set "output_file=!output_file:.ogv.gif=.gif!"
+    set "output_file=!output_file:.webm.gif=.gif!"
+    set "output_file=!output_file:.mpeg.gif=.gif!"
 
     set /a "low_height=!min_height!"
     set /a "high_height=!height!"
@@ -644,6 +586,9 @@ exit /b 0
         )
 exit /b 0
 
+REM -----------------------------------------
+REM Generate Palette
+REM -----------------------------------------
 :generate_palette
     set "input=%~1"
     set "palette=%~2"
@@ -659,6 +604,9 @@ exit /b 0
     )
 exit /b 0
 
+REM -----------------------------------------
+REM Generate GIF
+REM -----------------------------------------
 :generate_gif
     set "input=%~1"
     set "palette=%~2"
@@ -675,12 +623,68 @@ exit /b 0
     )
 exit /b 0
 
+REM -----------------------------------------
+REM Check File Size
+REM -----------------------------------------
 :check_file_size
     set "output=%~1"
     for %%I in ("!output!") do set "filesize=%%~zI"
     echo Trial !tries!: Current file size: !filesize! bytes
 exit /b 0
 
+REM -----------------------------------------
+REM Display Timeline
+REM -----------------------------------------
+:display_timeline
+    REM Initialize timeline variables
+    set "timeline="
+    set "has_hash="
+    
+    REM Generate timeline visualization
+    set /a "total_positions=!CONFIG_TIMELINE_WIDTH!-1"
+    for /l %%i in (0,1,!total_positions!) do (
+        set /a "current_pos=%%i * total_duration_int / total_positions"
+        if !current_pos! GEQ !start_time_whole! (
+            if defined duration (
+                set /a "end_pos=start_time_whole + duration_whole"
+                if !current_pos! LEQ !end_pos! (
+                    set "timeline=!timeline!#"
+                    set "has_hash=1"
+                ) else (
+                    set "timeline=!timeline!-"
+                )
+            ) else (
+                set "timeline=!timeline!#"
+                set "has_hash=1"
+            )
+        ) else (
+            set "timeline=!timeline!-"
+        )
+    )
+
+    echo.
+    echo Video Timeline  [!total_minutes!:!padded_total_seconds!.!total_seconds_decimal! total]
+    echo [!timeline!]
+    echo  !start_min!:!padded_start_seconds!.!start_sec_decimal!
+    if defined duration (
+        echo  !end_min!:!padded_end_seconds!.!end_sec_decimal!
+    ) else (
+        echo  (Full length)
+    )
+    echo.
+    
+    if not defined duration (
+        echo Selected: !start_min!:!padded_start_seconds!.!start_sec_decimal! - Full length
+    ) else (
+        echo Selected: !start_min!:!padded_start_seconds!.!start_sec_decimal! - !end_min!:!padded_end_seconds!.!end_sec_decimal!
+        echo Duration: !duration_whole!.!duration_decimal!
+    )
+    echo.
+exit /b 0
+
+REM -----------------------------------------
+REM Display Results
+REM -----------------------------------------
 :display_results
     if exist "!output_file!" (
         echo.
@@ -702,14 +706,23 @@ exit /b 0
         exit /b 1
     )
 
+REM -----------------------------------------
+REM Show Error
+REM -----------------------------------------
 :show_error
     echo Error: %~1
 exit /b 1
 
+REM -----------------------------------------
+REM Error Exit
+REM -----------------------------------------
 :error_exit
     pause
     exit /b 1
 
+REM -----------------------------------------
+REM End Script
+REM -----------------------------------------
 :end_script
     if exist "!palette_file!" del "!palette_file!"
     pause
