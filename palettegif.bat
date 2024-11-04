@@ -34,17 +34,15 @@ if /i "!specify_time!"=="y" (
     set "end_sec=!total_seconds!"
     set "end_sec_decimal=!total_seconds_decimal!"
     
-    set "start_time_whole=0"
-    set "start_time=0.0"
-    set /a "end_time_whole=!total_minutes! * 60 + !total_seconds!"
-    set "end_time=!end_time_whole!.!total_seconds_decimal!"
+    set "start_time=0:00.000"
+    set "end_time=!total_minutes!:!padded_total_seconds!.!total_seconds_decimal!"
     
     call :calculate_duration
     if errorlevel 1 goto error_exit
     
     echo Using full video length:
-    echo Start: 0:00.000
-    echo End: !total_minutes!:!padded_total_seconds!.!total_seconds_decimal!
+    echo Start: !start_time!
+    echo End: !end_time!
     echo Duration: !duration!
     echo.
 ) else (
@@ -53,22 +51,10 @@ if /i "!specify_time!"=="y" (
     goto ask_time_range
 )
 
-call :get_conversion_parameters
-if errorlevel 1 goto error_exit
-
 set "output_file=%~dpn1.gif"
 
-echo.
-echo ========== Conversion Summary ==========
-echo Input: !input_file!
-echo Output: !output_file!
-echo Time range: !start_time! - !end_time!
-echo Duration: !duration!
-echo Output FPS: !fps!
-echo Height: !height!
-echo Target size: !target_size_mb! MB
-echo ======================================
-echo.
+call :get_conversion_parameters
+if errorlevel 1 goto error_exit
 
 :confirm_conversion
 set /p "confirm=Start conversion? (y/n): "
@@ -284,12 +270,17 @@ REM -----------------------------------------
         set "start_sec_decimal=!temp_input!"
     )
 
+    REM Format and set start time
+    set "padded_start_seconds=0!start_sec!"
+    set "padded_start_seconds=!padded_start_seconds:~-2!"
+    set "start_time=!start_min!:!padded_start_seconds!.!start_sec_decimal!"
+
+    REM Calculate whole seconds for position calculation
     set /a "start_time_whole=!start_min! * 60 + !start_sec!"
-    set "start_time=!start_time_whole!.!start_sec_decimal!"
 
     call :display_intermediate_timeline
     
-    echo Selected start time: !start_min!:!padded_start_seconds!.!start_sec_decimal!
+    echo Selected start time: !start_time!
     echo.
 exit /b 0
 
@@ -306,94 +297,84 @@ REM -----------------------------------------
     set "end_sec=!total_seconds!"
     set "end_sec_decimal=!total_seconds_decimal!"
 
-    REM Get and display minutes
+    REM Get and validate minutes
     set /p "temp_input=End minutes (0-!total_minutes!): "
-    if "!temp_input!"=="" (
-        echo !total_minutes!
-    ) else (
+    if not "!temp_input!"=="" (
         if !temp_input! GTR !total_minutes! (
             echo Error: Minutes must be between 0 and !total_minutes!.
             goto end_time_input_loop
         )
+        if !temp_input! LSS !start_min! (
+            echo Error: End time must be after start time.
+            goto end_time_input_loop
+        )
         set "end_min=!temp_input!"
     )
-    
-    REM Get and display seconds
+
+    REM Get and validate seconds
+    :get_end_seconds
     set /p "temp_input=End seconds (0-59): "
-    if "!temp_input!"=="" (
-        echo !total_seconds!
-    ) else (
+    if not "!temp_input!"=="" (
         if !temp_input! GEQ 60 (
             echo Error: Seconds must be between 0 and 59.
-            goto end_time_input_loop
+            goto get_end_seconds
+        )
+        if !end_min! EQU !start_min! (
+            if !temp_input! LSS !start_sec! (
+                echo Error: End time must be after start time.
+                goto get_end_seconds
+            )
         )
         set "end_sec=!temp_input!"
     )
-    
-    REM Get and display decimal seconds
+
+    REM Get and validate decimal seconds
+    :get_end_decimal
     set /p "temp_input=End seconds decimal (0-999): "
-    if "!temp_input!"=="" (
-        echo !total_seconds_decimal!
-    ) else (
+    if not "!temp_input!"=="" (
         if !temp_input! GEQ 1000 (
             echo Error: Decimal part must be between 0 and 999.
-            goto end_time_input_loop
+            goto get_end_decimal
+        )
+        if !end_min! EQU !start_min! if !end_sec! EQU !start_sec! (
+            if !temp_input! LEQ !start_sec_decimal! (
+                echo Error: End time must be after start time.
+                goto get_end_decimal
+            )
         )
         set "end_sec_decimal=!temp_input!"
     )
 
-    REM Calculate total seconds and validate against maximum time
-    set /a "end_time_whole=!end_min! * 60 + !end_sec!"
-    set /a "total_time_whole=!total_minutes! * 60 + !total_seconds!"
-
-    if !end_time_whole! GTR !total_time_whole! (
-        echo Error: Specified time exceeds video length.
-        goto end_time_input_loop
-    )
-    if !end_time_whole! EQU !total_time_whole! (
-        if !end_sec_decimal! GTR !total_seconds_decimal! (
-            echo Error: Specified time exceeds video length.
-            goto end_time_input_loop
-        )
-    )
-
-    REM Set end time values
-    set "end_time=!end_time_whole!.!end_sec_decimal!"
-
-    REM Format end time display (add padding)
+    REM Format and set end time
     set "padded_end_seconds=0!end_sec!"
     set "padded_end_seconds=!padded_end_seconds:~-2!"
+    set "end_time=!end_min!:!padded_end_seconds!.!end_sec_decimal!"
 
     REM Show selected end time
-    echo Selected end time: !end_min!:!padded_end_seconds!.!end_sec_decimal!
+    echo Selected end time: !end_time!
     echo.
 exit /b 0
+
 
 REM -----------------------------------------
 REM Calculate Duration
 REM -----------------------------------------
 :calculate_duration
-    REM Calculate whole seconds duration
-    set /a "duration_whole=end_time_whole - start_time_whole"
-
-    REM Calculate decimal part of duration
-    if !end_sec_decimal! GEQ !start_sec_decimal! (
-        set "duration_decimal=!end_sec_decimal!"
-    ) else (
-        set /a "duration_whole-=1"
-        set /a "duration_decimal=1000 + !end_sec_decimal! - !start_sec_decimal!"
-    )
-
+    REM Convert to total milliseconds for accurate comparison
+    set /a "start_ms=(!start_min! * 60 + !start_sec!) * 1000 + !start_sec_decimal!"
+    set /a "end_ms=(!end_min! * 60 + !end_sec!) * 1000 + !end_sec_decimal!"
+    
+    REM Calculate difference
+    set /a "duration_ms=end_ms - start_ms"
+    
+    REM Convert back to seconds and decimal part
+    set /a "duration_whole=duration_ms / 1000"
+    set /a "duration_decimal=duration_ms %% 1000"
+    
     REM Ensure duration is positive
-    if !duration_whole! LSS 0 (
+    if !duration_ms! LEQ 0 (
         call :show_error "Invalid duration: end time must be after start time."
         exit /b 1
-    )
-    if !duration_whole!==0 (
-        if !duration_decimal! LEQ 0 (
-            call :show_error "Invalid duration: end time must be after start time."
-            exit /b 1
-        )
     )
 
     set "duration=!duration_whole!.!duration_decimal!"
@@ -405,12 +386,7 @@ REM -----------------------------------------
 :confirm_time_range
     :confirm_loop
     set /p "confirm=Is this range correct? (y/n): "
-    if /i "!confirm!"=="n" (
-        echo Press Enter to retry time input...
-        echo.
-        pause > nul
-        exit /b 1
-    )
+    if /i "!confirm!"=="n" exit /b 1
     if /i "!confirm!"=="y" exit /b 0
     echo Please enter 'y' or 'n'
     goto confirm_loop
@@ -428,6 +404,18 @@ REM -----------------------------------------
 
     call :get_size_input
     if errorlevel 1 exit /b 1
+
+    echo.
+    echo ========== Conversion Summary ==========
+    echo Input: !input_file!
+    echo Output: !output_file!
+    echo Time range: !start_time! - !end_time!
+    echo Duration: !duration!
+    echo Output FPS: !fps!
+    echo Height: !height!
+    echo Target size: !target_size_mb! MB
+    echo ======================================
+    echo.
 exit /b 0
 
 REM -----------------------------------------
@@ -638,25 +626,19 @@ REM -----------------------------------------
 :display_timeline
     REM Initialize timeline variables
     set "timeline="
-    set "has_hash="
     
-    REM Generate timeline visualization
-    set /a "total_positions=!CONFIG_TIMELINE_WIDTH!-1"
-    for /l %%i in (0,1,!total_positions!) do (
-        set /a "current_pos=%%i * total_duration_int / total_positions"
-        if !current_pos! GEQ !start_time_whole! (
-            if defined duration (
-                set /a "end_pos=start_time_whole + duration_whole"
-                if !current_pos! LEQ !end_pos! (
-                    set "timeline=!timeline!#"
-                    set "has_hash=1"
-                ) else (
-                    set "timeline=!timeline!-"
-                )
-            ) else (
-                set "timeline=!timeline!#"
-                set "has_hash=1"
-            )
+    REM Total duration in seconds
+    set /a "total_seconds=!total_minutes! * 60 + !total_seconds!"
+    
+    REM Calculate start position
+    set /a "start_seconds=!start_min! * 60 + !start_sec!"
+    set /a "start_chars=2 + (!start_seconds! * 48 / !total_seconds!)"
+    
+    REM Build the timeline string
+    set "timeline=-"
+    for /l %%i in (2,1,49) do (
+        if %%i EQU !start_chars! (
+            set "timeline=!timeline!#"
         ) else (
             set "timeline=!timeline!-"
         )
