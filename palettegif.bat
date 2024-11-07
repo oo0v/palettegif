@@ -10,6 +10,7 @@ if errorlevel 1 goto error_exit
 set "input_file=%~1"
 if "!input_file!"=="" (
     call :show_error "No input file specified."
+    endlocal
     goto error_exit
 )
 
@@ -60,6 +61,7 @@ if errorlevel 1 goto error_exit
 set /p "confirm=Start conversion? (y/n): "
 if /i "!confirm!"=="n" (
     echo Conversion cancelled.
+    endlocal
     goto end_script
 )
 if /i "!confirm!"=="y" (
@@ -67,6 +69,7 @@ if /i "!confirm!"=="y" (
     if errorlevel 1 goto error_exit
 
     call :display_results
+    endlocal
     goto end_script
 )
 echo Please enter 'y' or 'n'
@@ -508,7 +511,6 @@ REM -----------------------------------------
     set "output_file=!output_file:.mp4.gif=.gif!"
     set "output_file=!output_file:.avi.gif=.gif!"
     set "output_file=!output_file:.wmv.gif=.gif!"
-    set "output_file=!output_file:.av1.gif=.gif!"
     set "output_file=!output_file:.flv.gif=.gif!"
     set "output_file=!output_file:.mkv.gif=.gif!"
     set "output_file=!output_file:.mpg.gif=.gif!"
@@ -699,6 +701,7 @@ REM -----------------------------------------
 REM Error Exit
 REM -----------------------------------------
 :error_exit
+    endlocal
     pause
     exit /b 1
 
