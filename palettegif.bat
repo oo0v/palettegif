@@ -54,15 +54,18 @@ if /i "!specify_time!"=="y" (
 
 set "output_file=%~dpn1.gif"
 
+:conversion_start
 call :get_conversion_parameters
 if errorlevel 1 goto error_exit
 
 :confirm_conversion
+echo.
 set /p "confirm=Start conversion? (y/n): "
 if /i "!confirm!"=="n" (
-    echo Conversion cancelled.
-    endlocal
-    goto end_script
+    echo.
+    echo Restarting parameter input...
+    echo.
+    goto conversion_start
 )
 if /i "!confirm!"=="y" (
     call :process_gif
@@ -76,12 +79,23 @@ echo Please enter 'y' or 'n'
 goto confirm_conversion
 
 REM ============================================
-REM Functions
+REM Error Handling
 REM ============================================
 
+:error_exit
+    endlocal
+    pause
+    exit /b 1
+
+:end_script
+    if exist "!palette_file!" del "!palette_file!"
+    pause
+    exit /b 0
+
 REM -----------------------------------------
-REM Initialize Config
+REM Functions
 REM -----------------------------------------
+
 :init_config
     REM Initial configuration values
     set "CONFIG_INITIAL_FPS=20"
@@ -89,12 +103,14 @@ REM -----------------------------------------
     set "CONFIG_MIN_HEIGHT=40"
     set "CONFIG_MAX_TRIES=10"
     set "CONFIG_TIMELINE_WIDTH=50"
+    set "CONFIG_DEFAULT_ASPECT_RATIO=0"
 
     REM Working variables
     set "fps=!CONFIG_INITIAL_FPS!"
     set "target_size_mb=!CONFIG_INITIAL_TARGET_SIZE_MB!"
     set "min_height=!CONFIG_MIN_HEIGHT!"
     set "max_tries=!CONFIG_MAX_TRIES!"
+    set "aspect_ratio=!CONFIG_DEFAULT_ASPECT_RATIO!"
     
     REM Time variables initialization
     set "start_min=0"
@@ -105,9 +121,6 @@ REM -----------------------------------------
     set "end_sec_decimal=0"
 exit /b 0
 
-REM -----------------------------------------
-REM Get Video Info
-REM -----------------------------------------
 :get_video_info
     set "video_file=%~1"
     
@@ -131,13 +144,6 @@ REM -----------------------------------------
         )
     )
 
-    call :calculate_source_fps
-exit /b 0
-
-REM -----------------------------------------
-REM Calculate Source FPS
-REM -----------------------------------------
-:calculate_source_fps
     for /f "tokens=1,2 delims=/" %%a in ("!source_fps_raw!") do (
         set /a "source_fps_num=%%a"
         set /a "source_fps_den=%%b"
@@ -149,9 +155,6 @@ REM -----------------------------------------
     )
 exit /b 0
 
-REM -----------------------------------------
-REM Display Video Info
-REM -----------------------------------------
 :display_video_info
     set "padded_total_seconds=0!total_seconds!"
     set "padded_total_seconds=!padded_total_seconds:~-2!"
@@ -165,38 +168,6 @@ REM -----------------------------------------
     echo.
 exit /b 0
 
-REM -----------------------------------------
-REM Display Intermediate Timeline
-REM -----------------------------------------
-:display_intermediate_timeline
-    REM Format start time for display
-    set "padded_start_seconds=0!start_sec!"
-    set "padded_start_seconds=!padded_start_seconds:~-2!"
-
-    REM Initialize timeline
-    set "timeline="
-    
-    REM Generate timeline visualization
-    set /a "total_positions=!CONFIG_TIMELINE_WIDTH!-1"
-    for /l %%i in (0,1,!total_positions!) do (
-        set /a "current_pos=%%i * total_duration_int / total_positions"
-        if !current_pos! GEQ !start_time_whole! (
-            set "timeline=!timeline!#"
-        ) else (
-            set "timeline=!timeline!-"
-        )
-    )
-
-    echo.
-    echo Video Timeline  [!total_minutes!:!padded_total_seconds!.!total_seconds_decimal! total]
-    echo [!timeline!]
-    echo  !start_min!:!padded_start_seconds!.!start_sec_decimal! (Start Position)
-    echo.
-exit /b 0
-
-REM -----------------------------------------
-REM Get Time Range
-REM -----------------------------------------
 :get_time_range
     REM Get start time
     :time_input_loop
@@ -223,9 +194,6 @@ REM -----------------------------------------
     if errorlevel 1 goto time_input_loop
 exit /b 0
 
-REM -----------------------------------------
-REM Get Start Time
-REM -----------------------------------------
 :get_start_time
     echo Maximum time is !total_minutes!:!padded_total_seconds!.!total_seconds_decimal!
     echo Press Enter without input to start from beginning (0:00.000)
@@ -237,7 +205,6 @@ REM -----------------------------------------
     set "start_sec=0"
     set "start_sec_decimal=0"
 
-    REM Get and display minutes
     set /p "temp_input=Start minutes (0-!total_minutes!): "
     if "!temp_input!"=="" (
         echo 0
@@ -249,7 +216,6 @@ REM -----------------------------------------
         set "start_min=!temp_input!"
     )
     
-    REM Get and display seconds
     set /p "temp_input=Start seconds (0-59): "
     if "!temp_input!"=="" (
         echo 0
@@ -261,7 +227,6 @@ REM -----------------------------------------
         set "start_sec=!temp_input!"
     )
     
-    REM Get and display decimal seconds
     set /p "temp_input=Start seconds decimal (0-999): "
     if "!temp_input!"=="" (
         echo 0
@@ -287,9 +252,32 @@ REM -----------------------------------------
     echo.
 exit /b 0
 
-REM -----------------------------------------
-REM Get End Time
-REM -----------------------------------------
+:display_intermediate_timeline
+    REM Format start time for display
+    set "padded_start_seconds=0!start_sec!"
+    set "padded_start_seconds=!padded_start_seconds:~-2!"
+
+    REM Initialize timeline
+    set "timeline="
+    
+    REM Generate timeline visualization
+    set /a "total_positions=!CONFIG_TIMELINE_WIDTH!-1"
+    for /l %%i in (0,1,!total_positions!) do (
+        set /a "current_pos=%%i * total_duration_int / total_positions"
+        if !current_pos! GEQ !start_time_whole! (
+            set "timeline=!timeline!#"
+        ) else (
+            set "timeline=!timeline!-"
+        )
+    )
+
+    echo.
+    echo Video Timeline  [!total_minutes!:!padded_total_seconds!.!total_seconds_decimal! total]
+    echo [!timeline!]
+    echo  !start_min!:!padded_start_seconds!.!start_sec_decimal! (Start Position)
+    echo.
+exit /b 0
+
 :get_end_time
     echo Press Enter without input to use full video length (!total_minutes!:!padded_total_seconds!.!total_seconds_decimal!)
     echo.
@@ -300,7 +288,6 @@ REM -----------------------------------------
     set "end_sec=!total_seconds!"
     set "end_sec_decimal=!total_seconds_decimal!"
 
-    REM Get and validate minutes
     set /p "temp_input=End minutes (0-!total_minutes!): "
     if not "!temp_input!"=="" (
         if !temp_input! GTR !total_minutes! (
@@ -314,7 +301,6 @@ REM -----------------------------------------
         set "end_min=!temp_input!"
     )
 
-    REM Get and validate seconds
     :get_end_seconds
     set /p "temp_input=End seconds (0-59): "
     if not "!temp_input!"=="" (
@@ -331,7 +317,6 @@ REM -----------------------------------------
         set "end_sec=!temp_input!"
     )
 
-    REM Get and validate decimal seconds
     :get_end_decimal
     set /p "temp_input=End seconds decimal (0-999): "
     if not "!temp_input!"=="" (
@@ -353,15 +338,392 @@ REM -----------------------------------------
     set "padded_end_seconds=!padded_end_seconds:~-2!"
     set "end_time=!end_min!:!padded_end_seconds!.!end_sec_decimal!"
 
-    REM Show selected end time
     echo Selected end time: !end_time!
     echo.
 exit /b 0
 
+:get_conversion_parameters
+    call :get_fps_input
+    if errorlevel 1 exit /b 1
 
-REM -----------------------------------------
-REM Calculate Duration
-REM -----------------------------------------
+    call :get_height_input
+    if errorlevel 1 exit /b 1
+
+    call :get_aspect_ratio_input
+    if errorlevel 1 exit /b 1
+
+    call :get_size_input
+    if errorlevel 1 exit /b 1
+
+    echo.
+    echo ========== Conversion Summary ==========
+    echo Input: !input_file!
+    echo Output: !output_file!
+    echo Time range: !start_time! - !end_time!
+    echo Duration: !duration!
+    echo Output FPS: !fps!
+    echo Height: !height!
+    if !aspect_ratio! GTR 0 (
+        set /a "target_width=!height! * !aspect_ratio_num! / !aspect_ratio_den!"
+        echo Aspect Ratio: !aspect_ratio_num!:!aspect_ratio_den! ^(!target_width!x!height!^)
+    ) else (
+        echo Aspect Ratio: Original
+    )
+    echo Target size: !target_size_mb! MB
+    echo ======================================
+exit /b 0
+
+:get_fps_input
+    echo.
+    echo Source FPS: !source_fps!
+    :retry_fps
+    set /p "fps=fps=!fps! or fps=" <nul
+    set /p "fps="
+    if "!fps!"=="" set "fps=!CONFIG_INITIAL_FPS!"
+    
+    set "invalid="
+    for /f "delims=0123456789" %%i in ("!fps!") do set "invalid=%%i"
+    if defined invalid (
+        echo Error: FPS must be a number.
+        set "fps=!CONFIG_INITIAL_FPS!"
+        goto retry_fps
+    )
+    
+    if !fps! LEQ 0 (
+        echo Error: FPS must be greater than 0.
+        set "fps=!CONFIG_INITIAL_FPS!"
+        goto retry_fps
+    )
+    if !fps! GTR !source_fps! (
+        echo Warning: Output FPS is higher than source FPS.
+        set /p "continue=Continue? (y/n): "
+        if /i "!continue!"=="n" goto retry_fps
+    )
+exit /b 0
+
+:get_height_input
+    echo.
+    echo Current resolution: !original_width!x!original_height!
+    :retry_height
+    set /p "height=height=!original_height! or height=" <nul
+    set /p "height="
+    if "!height!"=="" set "height=!original_height!"
+    
+    set "invalid="
+    for /f "delims=0123456789" %%i in ("!height!") do set "invalid=%%i"
+    if defined invalid (
+        echo Error: Height must be a number.
+        set "height=!original_height!"
+        goto retry_height
+    )
+    
+    if !height! LSS !min_height! (
+        echo Error: Height must be at least !min_height! pixels.
+        set "height=!original_height!"
+        goto retry_height
+    )
+    if !height! GTR !original_height! (
+        echo Warning: Output height is larger than source height.
+        set /p "continue=Continue? (y/n): "
+        if /i "!continue!"=="n" goto retry_height
+    )
+exit /b 0
+
+:get_aspect_ratio_input
+    echo.
+    echo Current aspect ratio: !original_width!:!original_height!
+    echo Available aspect ratios:
+    echo 1. Original ^(no change^)
+    echo 2. 1:1 ^(square^)
+    echo 3. 16:9 ^(widescreen^)
+    echo 4. 4:3 ^(standard^)
+    echo 5. 9:16 ^(vertical^)
+    echo 6. Custom ^(e.g., 2:1^)
+    
+    :aspect_ratio_input_loop
+    set /p "aspect_choice=Choose aspect ratio (1-6): "
+    
+    if "!aspect_choice!"=="1" (
+        set "aspect_ratio=0"
+        set "aspect_ratio_num=0"
+        set "aspect_ratio_den=0"
+    ) else if "!aspect_choice!"=="2" (
+        set "aspect_ratio=1"
+        set "aspect_ratio_num=1"
+        set "aspect_ratio_den=1"
+    ) else if "!aspect_choice!"=="3" (
+        set "aspect_ratio=1.7778"
+        set "aspect_ratio_num=16"
+        set "aspect_ratio_den=9"
+    ) else if "!aspect_choice!"=="4" (
+        set "aspect_ratio=1.3333"
+        set "aspect_ratio_num=4"
+        set "aspect_ratio_den=3"
+    ) else if "!aspect_choice!"=="5" (
+        set "aspect_ratio=0.5625"
+        set "aspect_ratio_num=9"
+        set "aspect_ratio_den=16"
+    ) else if "!aspect_choice!"=="6" (
+        call :get_custom_aspect_ratio
+        if errorlevel 1 goto aspect_ratio_input_loop
+    ) else (
+        echo Invalid choice. Please enter a number between 1 and 6.
+        goto aspect_ratio_input_loop
+    )
+    
+    if !aspect_ratio! GTR 0 (
+        set /a "target_width=!height! * !aspect_ratio_num! / !aspect_ratio_den!"
+        echo Selected aspect ratio: !aspect_ratio_num!:!aspect_ratio_den! ^(!target_width!x!height!^)
+    ) else (
+        echo Using original aspect ratio
+    )
+exit /b 0
+
+:get_custom_aspect_ratio
+    echo Enter custom aspect ratio (width:height, e.g. 2:1):
+    set /p "custom_ratio="
+    
+    for /f "tokens=1,2 delims=:" %%a in ("!custom_ratio!") do (
+        set "aspect_ratio_num=%%a"
+        set "aspect_ratio_den=%%b"
+    )
+    
+    set "non_numeric="
+    for /f "delims=0123456789" %%a in ("!aspect_ratio_num!!aspect_ratio_den!") do set "non_numeric=%%a"
+    if defined non_numeric (
+        call :show_error "Please enter valid numbers for aspect ratio."
+        exit /b 1
+    )
+    
+    if !aspect_ratio_num! LEQ 0 (
+        call :show_error "Width must be greater than 0."
+        exit /b 1
+    )
+    if !aspect_ratio_den! LEQ 0 (
+        call :show_error "Height must be greater than 0."
+        exit /b 1
+    )
+    
+    set /a "aspect_ratio=(!aspect_ratio_num! * 10000) / !aspect_ratio_den!"
+    set /a "aspect_ratio_decimal=!aspect_ratio! %% 10000"
+    set /a "aspect_ratio=!aspect_ratio! / 10000"
+exit /b 0
+
+:get_size_input
+    echo.
+    :retry_size
+    set /p "target_size_mb=size=!target_size_mb!mb or size=" <nul
+    set /p "target_size_mb="
+    if "!target_size_mb!"=="" set "target_size_mb=!CONFIG_INITIAL_TARGET_SIZE_MB!"
+    
+    set "invalid="
+    for /f "delims=0123456789" %%i in ("!target_size_mb!") do set "invalid=%%i"
+    if defined invalid (
+        echo Error: Size must be a number.
+        set "target_size_mb=!CONFIG_INITIAL_TARGET_SIZE_MB!"
+        goto retry_size
+    )
+    
+    if !target_size_mb! LEQ 0 (
+        echo Error: Size must be greater than 0 MB.
+        set "target_size_mb=!CONFIG_INITIAL_TARGET_SIZE_MB!"
+        goto retry_size
+    )
+    set /a "target_size=!target_size_mb! * 1024 * 1024"
+exit /b 0
+
+:process_gif
+    set "output_file=!input_file!.gif"
+    set "palette_file=!input_file!_palette.png"
+    
+    set "output_file=!output_file:.mov.gif=.gif!"
+    set "output_file=!output_file:.mp4.gif=.gif!"
+    set "output_file=!output_file:.avi.gif=.gif!"
+    set "output_file=!output_file:.wmv.gif=.gif!"
+    set "output_file=!output_file:.flv.gif=.gif!"
+    set "output_file=!output_file:.mkv.gif=.gif!"
+    set "output_file=!output_file:.mpg.gif=.gif!"
+    set "output_file=!output_file:.3gp.gif=.gif!"
+    set "output_file=!output_file:.ogv.gif=.gif!"
+    set "output_file=!output_file:.webm.gif=.gif!"
+    set "output_file=!output_file:.mpeg.gif=.gif!"
+
+    set /a "low_height=!min_height!"
+    set /a "high_height=!height!"
+    set "tries=0"
+    set "current_height=!height!"
+    set "last_height=0"
+    set "last_aspect=none"
+
+    :generate_loop
+        set /a "tries+=1"
+        
+        echo.
+        echo ========== Trial !tries! of !max_tries! ==========
+        echo Attempting with height: !current_height!
+        echo Time parameters: Start=!start_time!s Duration=!duration!s
+
+        if !current_height! NEQ !last_height! (
+            set "regenerate_palette=1"
+        ) else if !aspect_ratio! NEQ !last_aspect! (
+            set "regenerate_palette=1"
+        ) else (
+            set "regenerate_palette=0"
+        )
+
+        if !regenerate_palette! EQU 1 (
+            echo Generating new palette for height: !current_height!
+            if exist "!palette_file!" del "!palette_file!"
+            call :generate_palette "!input_file!" "!palette_file!" || (
+                if exist "!palette_file!" del "!palette_file!"
+                exit /b 1
+            )
+            set "last_height=!current_height!"
+            set "last_aspect=!aspect_ratio!"
+        ) else (
+            echo Reusing existing palette
+        )
+
+        call :generate_gif "!input_file!" "!palette_file!" "!output_file!" || (
+            if exist "!palette_file!" del "!palette_file!"
+            exit /b 1
+        )
+        
+        call :check_file_size "!output_file!" || exit /b 1
+
+        if !tries! GEQ !max_tries! (
+            if !filesize! GTR !target_size! (
+                echo Maximum tries reached. Best attempt: !filesize! bytes
+                if exist "!palette_file!" del "!palette_file!"
+                exit /b 0
+            )
+            echo Maximum tries reached. Last attempt: !filesize! bytes
+            if exist "!palette_file!" del "!palette_file!"
+            exit /b 0
+        )
+
+        if !filesize! GTR !target_size! (
+            if !tries!==1 (
+                echo.
+                echo File size exceeds target size.
+                echo Starting binary search to find optimal height for target file size...
+                echo.
+            )
+            if !current_height! LEQ !min_height! (
+                echo Reached minimum height. Best attempt: !filesize! bytes
+                if exist "!palette_file!" del "!palette_file!"
+                exit /b 0
+            )
+            set /a "high_height=current_height - 1"
+            set /a "current_height=(low_height + high_height) / 2"
+            if !current_height! LSS !min_height! (
+                set "current_height=!min_height!"
+            )
+        ) else (
+            set /a "size_diff=target_size - filesize"
+            if !size_diff! LSS 1048576 (
+                echo Target size achieved within 1MB tolerance. File size: !filesize! bytes
+                if exist "!palette_file!" del "!palette_file!"
+                exit /b 0
+            )
+            if !tries!==1 (
+                echo First try successful. File size: !filesize! bytes
+                if exist "!palette_file!" del "!palette_file!"
+                exit /b 0
+            )
+            set /a "low_height=current_height + 1"
+            set /a "current_height=(low_height + high_height) / 2"
+        )
+        
+        if !current_height! EQU !height! (
+            echo Height optimization complete. File size: !filesize! bytes
+            if exist "!palette_file!" del "!palette_file!"
+            exit /b 0
+        )
+        goto generate_loop
+exit /b 0
+
+:generate_palette
+    set "input=%~1"
+    set "palette=%~2"
+
+    if !aspect_ratio! GTR 0 (
+        set /a "crop_width=!current_height! * !aspect_ratio_num! / !aspect_ratio_den!"
+        set "crop_filter=,crop=!crop_width!:!current_height!"
+    ) else (
+        set "crop_filter="
+    )
+
+    ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" ^
+        -vf "fps=!fps!,scale=-1:!current_height!:flags=spline!crop_filter!,palettegen" ^
+        -update 1 -frames:v 1 "!palette!"
+    
+    if errorlevel 1 (
+        call :show_error "Error occurred while generating palette."
+        if exist "!palette!" del "!palette!"
+        exit /b 1
+    )
+exit /b 0
+
+:generate_gif
+    set "input=%~1"
+    set "palette=%~2"
+    set "output=%~3"
+
+    if !aspect_ratio! GTR 0 (
+        set /a "crop_width=!current_height! * !aspect_ratio_num! / !aspect_ratio_den!"
+        set "crop_filter=,crop=!crop_width!:!current_height!"
+    ) else (
+        set "crop_filter="
+    )
+
+    ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" -i "!palette!" ^
+        -filter_complex "[0:v] fps=!fps!,scale=-1:!current_height!:flags=spline!crop_filter! [x]; [x][1:v] paletteuse" ^
+        -c:v gif "!output!"
+    
+    if errorlevel 1 (
+        call :show_error "Error occurred while generating GIF."
+        if exist "!palette!" del "!palette!"
+        exit /b 1
+    )
+exit /b 0
+
+:check_file_size
+    set "output=%~1"
+    for %%I in ("!output!") do set "filesize=%%~zI"
+    echo Trial !tries!: Current file size: !filesize! bytes
+exit /b 0
+
+:show_error
+    echo Error: %~1
+exit /b 1
+
+:display_results
+    if exist "!output_file!" (
+        echo.
+        echo ========== Conversion Complete ==========
+        echo Input: !input_file!
+        echo Output: !output_file!
+        echo Original resolution: !original_width!x!original_height!
+        echo Final height: !current_height!
+        if !aspect_ratio! GTR 0 (
+            set /a "final_width=!current_height! * !aspect_ratio_num! / !aspect_ratio_den!"
+            echo Final resolution: !final_width!x!current_height!
+            echo Aspect ratio: !aspect_ratio_num!:!aspect_ratio_den!
+        )
+        echo Time range: !start_time! - !end_time!
+        echo Duration: !duration!
+        echo Source FPS: !source_fps!
+        echo Output FPS: !fps!
+        echo Output file size: !filesize! bytes (!target_size! bytes target)
+        echo Total tries: !tries!
+        echo ====================================
+        exit /b 0
+    ) else (
+        call :show_error "No output file generated."
+        exit /b 1
+    )
+
 :calculate_duration
     REM Convert to total milliseconds for accurate comparison
     set /a "start_ms=(!start_min! * 60 + !start_sec!) * 1000 + !start_sec_decimal!"
@@ -383,248 +745,6 @@ REM -----------------------------------------
     set "duration=!duration_whole!.!duration_decimal!"
 exit /b 0
 
-REM -----------------------------------------
-REM Confirm Time Range
-REM -----------------------------------------
-:confirm_time_range
-    :confirm_loop
-    set /p "confirm=Is this range correct? (y/n): "
-    if /i "!confirm!"=="n" exit /b 1
-    if /i "!confirm!"=="y" exit /b 0
-    echo Please enter 'y' or 'n'
-    goto confirm_loop
-exit /b 0
-
-REM -----------------------------------------
-REM Get Conversion Parameters
-REM -----------------------------------------
-:get_conversion_parameters
-    call :get_fps_input
-    if errorlevel 1 exit /b 1
-
-    call :get_height_input
-    if errorlevel 1 exit /b 1
-
-    call :get_size_input
-    if errorlevel 1 exit /b 1
-
-    echo.
-    echo ========== Conversion Summary ==========
-    echo Input: !input_file!
-    echo Output: !output_file!
-    echo Time range: !start_time! - !end_time!
-    echo Duration: !duration!
-    echo Output FPS: !fps!
-    echo Height: !height!
-    echo Target size: !target_size_mb! MB
-    echo ======================================
-    echo.
-exit /b 0
-
-REM -----------------------------------------
-REM Get FPS Input
-REM -----------------------------------------
-:get_fps_input
-    echo.
-    echo Source FPS: !source_fps!
-    set /p "fps=fps=!fps! or fps=" <nul
-    set /p "fps="
-    if "!fps!"=="" set "fps=!CONFIG_INITIAL_FPS!"
-    
-    set "non_numeric="
-    for /f "delims=0123456789" %%a in ("!fps!") do set "non_numeric=%%a"
-    if defined non_numeric (
-        set "fps=!CONFIG_INITIAL_FPS!"
-        call :show_error "Please enter a valid FPS."
-        exit /b 1
-    )
-    if !fps! LEQ 0 (
-        call :show_error "FPS must be greater than 0."
-        exit /b 1
-    )
-    if !fps! GTR !source_fps! (
-        echo Warning: Output FPS is higher than source FPS.
-        set /p "continue=Continue? (y/n): "
-        if /i "!continue!"=="n" exit /b 1
-    )
-exit /b 0
-
-REM -----------------------------------------
-REM Get Height Input
-REM -----------------------------------------
-:get_height_input
-    echo.
-    echo Current resolution: !original_width!x!original_height!
-    set /p "height=height=!original_height! or height=" <nul
-    set /p "height="
-    if "!height!"=="" set "height=!original_height!"
-    
-    set "non_numeric="
-    for /f "delims=0123456789" %%a in ("!height!") do set "non_numeric=%%a"
-    if defined non_numeric (
-        set "height=!original_height!"
-        call :show_error "Please enter a valid height."
-        exit /b 1
-    )
-    if !height! LSS !min_height! (
-        call :show_error "Height must be at least !min_height! pixels."
-        exit /b 1
-    )
-    if !height! GTR !original_height! (
-        echo Warning: Output height is larger than source height.
-        set /p "continue=Continue? (y/n): "
-        if /i "!continue!"=="n" exit /b 1
-    )
-exit /b 0
-
-REM -----------------------------------------
-REM Get Size Input
-REM -----------------------------------------
-:get_size_input
-    echo.
-    set /p "target_size_mb=size=!target_size_mb!mb or size=" <nul
-    set /p "target_size_mb="
-    if "!target_size_mb!"=="" set "target_size_mb=!CONFIG_INITIAL_TARGET_SIZE_MB!"
-    
-    set "non_numeric="
-    for /f "delims=0123456789" %%a in ("!target_size_mb!") do set "non_numeric=%%a"
-    if defined non_numeric (
-        set "target_size_mb=!CONFIG_INITIAL_TARGET_SIZE_MB!"
-        call :show_error "Please enter a valid size in MB."
-        exit /b 1
-    )
-    if !target_size_mb! LEQ 0 (
-        call :show_error "Size must be greater than 0 MB."
-        exit /b 1
-    )
-    set /a "target_size=!target_size_mb! * 1024 * 1024"
-exit /b 0
-
-REM -----------------------------------------
-REM Process GIF
-REM -----------------------------------------
-:process_gif
-    set "output_file=!input_file!.gif"
-    set "palette_file=!input_file!_palette.png"
-    
-    set "output_file=!output_file:.mov.gif=.gif!"
-    set "output_file=!output_file:.mp4.gif=.gif!"
-    set "output_file=!output_file:.avi.gif=.gif!"
-    set "output_file=!output_file:.wmv.gif=.gif!"
-    set "output_file=!output_file:.flv.gif=.gif!"
-    set "output_file=!output_file:.mkv.gif=.gif!"
-    set "output_file=!output_file:.mpg.gif=.gif!"
-    set "output_file=!output_file:.3gp.gif=.gif!"
-    set "output_file=!output_file:.ogv.gif=.gif!"
-    set "output_file=!output_file:.webm.gif=.gif!"
-    set "output_file=!output_file:.mpeg.gif=.gif!"
-
-    set /a "low_height=!min_height!"
-    set /a "high_height=!height!"
-    set "tries=0"
-
-    :generate_loop
-        set /a "tries+=1"
-        if !tries!==1 (
-            set "current_height=!height!"
-        ) else (
-            set /a "current_height=(low_height + high_height) / 2"
-        )
-
-        echo.
-        echo ========== Trial !tries! of !max_tries! ==========
-        echo Attempting with height: !current_height!
-        echo Time parameters: Start=!start_time!s Duration=!duration!s
-
-        call :generate_palette "!input_file!" "!palette_file!" || exit /b 1
-        call :generate_gif "!input_file!" "!palette_file!" "!output_file!" || exit /b 1
-        call :check_file_size "!output_file!" || exit /b 1
-
-        if !tries! GEQ !max_tries! (
-            if !filesize! GTR !target_size! (
-                echo Maximum tries reached. Deleting output file.
-                if exist "!output_file!" del "!output_file!"
-                exit /b 1
-            )
-        )
-
-        if !filesize! GTR !target_size! (
-            if !tries!==1 (
-                echo.
-                echo File size exceeds target size.
-                echo Starting binary search to find optimal height for target file size...
-                echo.
-            )
-            if !current_height! LEQ !min_height! (
-                echo Reached minimum height. Best attempt: !filesize! bytes
-                exit /b 0
-            )
-            set /a "high_height=current_height - 1"
-            goto generate_loop
-        ) else (
-            set /a "size_diff=target_size - filesize"
-            if !size_diff! LSS 1048576 (
-                echo Target size achieved within 1MB tolerance. File size: !filesize! bytes
-                exit /b 0
-            )
-            if !tries!==1 (
-                echo First try successful. File size: !filesize! bytes
-                exit /b 0
-            )
-            set /a "low_height=current_height + 1"
-            goto generate_loop
-        )
-exit /b 0
-
-REM -----------------------------------------
-REM Generate Palette
-REM -----------------------------------------
-:generate_palette
-    set "input=%~1"
-    set "palette=%~2"
-
-    ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" ^
-        -vf "fps=!fps!,scale=-1:!current_height!:flags=spline,palettegen" ^
-        -update 1 -frames:v 1 "!palette!"
-    
-    if errorlevel 1 (
-        call :show_error "Error occurred while generating palette."
-        if exist "!palette!" del "!palette!"
-        exit /b 1
-    )
-exit /b 0
-
-REM -----------------------------------------
-REM Generate GIF
-REM -----------------------------------------
-:generate_gif
-    set "input=%~1"
-    set "palette=%~2"
-    set "output=%~3"
-
-    ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" -i "!palette!" ^
-        -filter_complex "[0:v] fps=!fps!,scale=-1:!current_height!:flags=spline [x]; [x][1:v] paletteuse" ^
-        -c:v gif "!output!"
-    
-    if errorlevel 1 (
-        call :show_error "Error occurred while generating GIF."
-        if exist "!palette!" del "!palette!"
-        exit /b 1
-    )
-exit /b 0
-
-REM -----------------------------------------
-REM Check File Size
-REM -----------------------------------------
-:check_file_size
-    set "output=%~1"
-    for %%I in ("!output!") do set "filesize=%%~zI"
-    echo Trial !tries!: Current file size: !filesize! bytes
-exit /b 0
-
-REM -----------------------------------------
-REM Display Timeline
-REM -----------------------------------------
 :display_timeline
     REM Initialize timeline variables
     set "timeline="
@@ -666,49 +786,11 @@ REM -----------------------------------------
     echo.
 exit /b 0
 
-REM -----------------------------------------
-REM Display Results
-REM -----------------------------------------
-:display_results
-    if exist "!output_file!" (
-        echo.
-        echo ========== Conversion Complete ==========
-        echo Input: !input_file!
-        echo Output: !output_file!
-        echo Original resolution: !original_width!x!original_height!
-        echo Final height: !current_height!
-        echo Time range: !start_time! - !end_time!
-        echo Duration: !duration!
-        echo Source FPS: !source_fps!
-        echo Output FPS: !fps!
-        echo Output file size: !filesize! bytes (!target_size! bytes target)
-        echo Total tries: !tries!
-        echo ====================================
-        exit /b 0
-    ) else (
-        call :show_error "No output file generated."
-        exit /b 1
-    )
-
-REM -----------------------------------------
-REM Show Error
-REM -----------------------------------------
-:show_error
-    echo Error: %~1
-exit /b 1
-
-REM -----------------------------------------
-REM Error Exit
-REM -----------------------------------------
-:error_exit
-    endlocal
-    pause
-    exit /b 1
-
-REM -----------------------------------------
-REM End Script
-REM -----------------------------------------
-:end_script
-    if exist "!palette_file!" del "!palette_file!"
-    pause
-    exit /b 0
+:confirm_time_range
+    :confirm_loop
+    set /p "confirm=Is this range correct? (y/n): "
+    if /i "!confirm!"=="n" exit /b 1
+    if /i "!confirm!"=="y" exit /b 0
+    echo Please enter 'y' or 'n'
+    goto confirm_loop
+exit /b 0
