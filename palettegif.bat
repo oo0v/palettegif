@@ -1,11 +1,25 @@
 @echo off
 setlocal enabledelayedexpansion
 
-REM ============================================
-REM Main
-REM ============================================
-call :init_config
-if errorlevel 1 goto error_exit
+set "CONFIG_INITIAL_FPS=20"
+set "CONFIG_INITIAL_TARGET_SIZE_MB=15"
+set "CONFIG_MIN_HEIGHT=40"
+set "CONFIG_MAX_TRIES=10"
+set "CONFIG_TIMELINE_WIDTH=50"
+set "CONFIG_DEFAULT_ASPECT_RATIO=0"
+
+set "fps=!CONFIG_INITIAL_FPS!"
+set "target_size_mb=!CONFIG_INITIAL_TARGET_SIZE_MB!"
+set "min_height=!CONFIG_MIN_HEIGHT!"
+set "max_tries=!CONFIG_MAX_TRIES!"
+set "aspect_ratio=!CONFIG_DEFAULT_ASPECT_RATIO!"
+    
+set "start_min=0"
+set "start_sec=0"
+set "start_sec_decimal=0"
+set "end_min=0"
+set "end_sec=0"
+set "end_sec_decimal=0"
 
 set "input_file=%~1"
 if "!input_file!"=="" (
@@ -17,7 +31,16 @@ if "!input_file!"=="" (
 call :get_video_info "!input_file!"
 if errorlevel 1 goto error_exit
 
-call :display_video_info
+set "padded_total_seconds=0!total_seconds!"
+set "padded_total_seconds=!padded_total_seconds:~-2!"
+echo =====================================
+echo Input file: !input_file!
+echo Resolution: !original_width!x!original_height!
+echo Duration: !total_minutes!:!padded_total_seconds!.!total_seconds_decimal!
+echo Frame count: !frame_count! frames
+echo Source FPS: !source_fps! (!source_fps_raw!)
+echo =====================================
+echo.
 
 :ask_time_range
 echo Do you want to specify time range? (Default: Full video)
@@ -78,10 +101,6 @@ if /i "!confirm!"=="y" (
 echo Please enter 'y' or 'n'
 goto confirm_conversion
 
-REM ============================================
-REM Error Handling
-REM ============================================
-
 :error_exit
     endlocal
     pause
@@ -92,39 +111,9 @@ REM ============================================
     pause
     exit /b 0
 
-REM -----------------------------------------
-REM Functions
-REM -----------------------------------------
-
-:init_config
-    REM Initial configuration values
-    set "CONFIG_INITIAL_FPS=20"
-    set "CONFIG_INITIAL_TARGET_SIZE_MB=15"
-    set "CONFIG_MIN_HEIGHT=40"
-    set "CONFIG_MAX_TRIES=10"
-    set "CONFIG_TIMELINE_WIDTH=50"
-    set "CONFIG_DEFAULT_ASPECT_RATIO=0"
-
-    REM Working variables
-    set "fps=!CONFIG_INITIAL_FPS!"
-    set "target_size_mb=!CONFIG_INITIAL_TARGET_SIZE_MB!"
-    set "min_height=!CONFIG_MIN_HEIGHT!"
-    set "max_tries=!CONFIG_MAX_TRIES!"
-    set "aspect_ratio=!CONFIG_DEFAULT_ASPECT_RATIO!"
-    
-    REM Time variables initialization
-    set "start_min=0"
-    set "start_sec=0"
-    set "start_sec_decimal=0"
-    set "end_min=0"
-    set "end_sec=0"
-    set "end_sec_decimal=0"
-exit /b 0
-
 :get_video_info
     set "video_file=%~1"
     
-    REM Get duration
     for /f "tokens=1,2 delims=." %%a in ('ffprobe -v error -show_entries format^=duration -of default^=noprint_wrappers^=1:nokey^=1 "!video_file!"') do (
         set "total_duration_int=%%a"
         set "total_duration=%%a.%%b"
@@ -132,8 +121,7 @@ exit /b 0
         set /a "total_seconds=%%a%%60"
         set "total_seconds_decimal=%%b"
     )
-
-    REM Get video properties
+    
     for /f "tokens=*" %%a in ('ffprobe -v error -select_streams v:0 -show_entries "stream=width,height,r_frame_rate,nb_frames,pix_fmt" -of csv^=s^=x:p^=0 "!video_file!"') do (
         for /f "tokens=1-5 delims=x," %%b in ("%%a") do (
             set "original_width=%%b"
@@ -155,31 +143,15 @@ exit /b 0
     )
 exit /b 0
 
-:display_video_info
-    set "padded_total_seconds=0!total_seconds!"
-    set "padded_total_seconds=!padded_total_seconds:~-2!"
-
-    echo Input file: !input_file!
-    echo Resolution: !original_width!x!original_height!
-    echo Duration: !total_minutes!:!padded_total_seconds!.!total_seconds_decimal!
-    echo Frame count: !frame_count! frames
-    echo Source FPS: !source_fps! (!source_fps_raw!)
-    echo =====================================
-    echo.
-exit /b 0
-
 :get_time_range
-    REM Get start time
     :time_input_loop
     call :get_start_time
     if errorlevel 1 goto time_input_loop
 
-    REM Get end time and validate duration
     :end_time_loop
     call :get_end_time
     if errorlevel 1 goto end_time_loop
 
-    REM Calculate and validate duration
     call :calculate_duration
     if errorlevel 1 (
         echo Press Enter to retry time input...
@@ -188,7 +160,6 @@ exit /b 0
         goto time_input_loop
     )
 
-    REM Display and confirm time range
     call :display_timeline
     call :confirm_time_range
     if errorlevel 1 goto time_input_loop
@@ -200,7 +171,6 @@ exit /b 0
     echo.
     
     :start_time_input_loop
-    REM Initialize with default values
     set "start_min=0"
     set "start_sec=0"
     set "start_sec_decimal=0"
@@ -224,6 +194,12 @@ exit /b 0
             echo Error: Seconds must be between 0 and 59.
             goto start_time_input_loop
         )
+        set /a "total_start_seconds=!start_min! * 60 + !temp_input!"
+        set /a "total_video_seconds=!total_minutes! * 60 + !total_seconds!"
+        if !total_start_seconds! GTR !total_video_seconds! (
+            echo Error: Start time exceeds video duration.
+            goto start_time_input_loop
+        )
         set "start_sec=!temp_input!"
     )
     
@@ -235,46 +211,39 @@ exit /b 0
             echo Error: Decimal part must be between 0 and 999.
             goto start_time_input_loop
         )
+        if !start_min! EQU !total_minutes! if !start_sec! EQU !total_seconds! (
+            if !temp_input! GTR %total_seconds_decimal:~0,3% (
+                echo Error: Start time exceeds video duration.
+                goto start_time_input_loop
+            )
+        )
         set "start_sec_decimal=!temp_input!"
     )
 
-    REM Format and set start time
     set "padded_start_seconds=0!start_sec!"
     set "padded_start_seconds=!padded_start_seconds:~-2!"
     set "start_time=!start_min!:!padded_start_seconds!.!start_sec_decimal!"
 
-    REM Calculate whole seconds for position calculation
-    set /a "start_time_whole=!start_min! * 60 + !start_sec!"
-
-    call :display_intermediate_timeline
+    set /a "total_ms=(!total_minutes! * 60000) + (!total_seconds! * 1000) + %total_seconds_decimal:~0,3%"
+    set /a "start_ms=(!start_min! * 60000) + (!start_sec! * 1000) + !start_sec_decimal!"
     
-    echo Selected start time: !start_time!
-    echo.
-exit /b 0
-
-:display_intermediate_timeline
-    REM Format start time for display
-    set "padded_start_seconds=0!start_sec!"
-    set "padded_start_seconds=!padded_start_seconds:~-2!"
-
-    REM Initialize timeline
-    set "timeline="
+    set /a "start_pos=(start_ms * 50) / total_ms"
     
-    REM Generate timeline visualization
-    set /a "total_positions=!CONFIG_TIMELINE_WIDTH!-1"
-    for /l %%i in (0,1,!total_positions!) do (
-        set /a "current_pos=%%i * total_duration_int / total_positions"
-        if !current_pos! GEQ !start_time_whole! (
-            set "timeline=!timeline!#"
-        ) else (
-            set "timeline=!timeline!-"
-        )
-    )
-
     echo.
     echo Video Timeline  [!total_minutes!:!padded_total_seconds!.!total_seconds_decimal! total]
+    
+    set "timeline=--------------------------------------------------"
+    set "before="
+    for /l %%i in (0,1,!start_pos!) do set "before=!before!-"
+    set "after=-"
+    for /l %%i in (!start_pos!,1,49) do set "after=!after!-"
+    set "timeline=!before!#!after!"
+    
     echo [!timeline!]
-    echo  !start_min!:!padded_start_seconds!.!start_sec_decimal! (Start Position)
+    echo  !start_time!
+    echo.
+    
+    echo Selected start time: !start_time!
     echo.
 exit /b 0
 
@@ -283,7 +252,6 @@ exit /b 0
     echo.
 
     :end_time_input_loop
-    REM Initialize with default values
     set "end_min=!total_minutes!"
     set "end_sec=!total_seconds!"
     set "end_sec_decimal=!total_seconds_decimal!"
@@ -308,6 +276,12 @@ exit /b 0
             echo Error: Seconds must be between 0 and 59.
             goto get_end_seconds
         )
+        set /a "total_end_seconds=!end_min! * 60 + !temp_input!"
+        set /a "total_video_seconds=!total_minutes! * 60 + !total_seconds!"
+        if !total_end_seconds! GTR !total_video_seconds! (
+            echo Error: End time exceeds video duration.
+            goto end_time_input_loop
+        )
         if !end_min! EQU !start_min! (
             if !temp_input! LSS !start_sec! (
                 echo Error: End time must be after start time.
@@ -324,6 +298,12 @@ exit /b 0
             echo Error: Decimal part must be between 0 and 999.
             goto get_end_decimal
         )
+        if !end_min! EQU !total_minutes! if !end_sec! EQU !total_seconds! (
+            if !temp_input! GTR !total_seconds_decimal! (
+                echo Error: End time exceeds video duration.
+                goto get_end_decimal
+            )
+        )
         if !end_min! EQU !start_min! if !end_sec! EQU !start_sec! (
             if !temp_input! LEQ !start_sec_decimal! (
                 echo Error: End time must be after start time.
@@ -333,13 +313,64 @@ exit /b 0
         set "end_sec_decimal=!temp_input!"
     )
 
-    REM Format and set end time
     set "padded_end_seconds=0!end_sec!"
     set "padded_end_seconds=!padded_end_seconds:~-2!"
     set "end_time=!end_min!:!padded_end_seconds!.!end_sec_decimal!"
 
     echo Selected end time: !end_time!
     echo.
+exit /b 0
+
+:calculate_duration
+    set /a "start_ms=(!start_min! * 60 + !start_sec!) * 1000 + !start_sec_decimal!"
+    set /a "end_ms=(!end_min! * 60 + !end_sec!) * 1000 + !end_sec_decimal!"
+    set /a "duration_ms=end_ms - start_ms"
+    set /a "duration_whole=duration_ms / 1000"
+    set /a "duration_decimal=duration_ms %% 1000"
+    
+    if !duration_ms! LEQ 0 (
+        call :show_error "Invalid duration: end time must be after start time."
+        exit /b 1
+    )
+    set "duration=!duration_whole!.!duration_decimal!"
+exit /b 0
+
+:display_timeline
+    set /a "total_ms=(!total_minutes! * 60000) + (!total_seconds! * 1000) + %total_seconds_decimal:~0,3%"
+    set /a "start_ms=(!start_min! * 60000) + (!start_sec! * 1000) + !start_sec_decimal!"
+    set /a "end_ms=(!end_min! * 60000) + (!end_sec! * 1000) + !end_sec_decimal!"
+    
+    echo.
+    echo Video Timeline  [!total_minutes!:!padded_total_seconds!.!total_seconds_decimal! total]
+    
+    set /a "start_pos=(start_ms * 50) / total_ms"
+    set /a "end_pos=(end_ms * 50) / total_ms"
+    
+    set "filled="
+    for /l %%i in (0,1,!start_pos!) do set "filled=!filled!-"
+    for /l %%i in (!start_pos!,1,!end_pos!) do set "filled=!filled!#"
+    set "remaining="
+    for /l %%i in (!end_pos!,1,50) do set "remaining=!remaining!-"
+    set "timeline=!filled!!remaining!"
+    
+    echo [!timeline!]
+    echo  !start_min!:!padded_start_seconds!.!start_sec_decimal!
+    echo  !end_min!:!padded_end_seconds!.!end_sec_decimal!
+    echo.
+    echo Selected: !start_min!:!padded_start_seconds!.!start_sec_decimal! - !end_min!:!padded_end_seconds!.!end_sec_decimal!
+    if defined duration (
+        echo Duration: !duration!
+    )
+    echo.
+exit /b 0
+
+:confirm_time_range
+    :confirm_loop
+    set /p "confirm=Is this range correct? (y/n): "
+    if /i "!confirm!"=="n" exit /b 1
+    if /i "!confirm!"=="y" exit /b 0
+    echo Please enter 'y' or 'n'
+    goto confirm_loop
 exit /b 0
 
 :get_conversion_parameters
@@ -694,10 +725,6 @@ exit /b 0
     echo Trial !tries!: Current file size: !filesize! bytes
 exit /b 0
 
-:show_error
-    echo Error: %~1
-exit /b 1
-
 :display_results
     if exist "!output_file!" (
         echo.
@@ -724,73 +751,6 @@ exit /b 1
         exit /b 1
     )
 
-:calculate_duration
-    REM Convert to total milliseconds for accurate comparison
-    set /a "start_ms=(!start_min! * 60 + !start_sec!) * 1000 + !start_sec_decimal!"
-    set /a "end_ms=(!end_min! * 60 + !end_sec!) * 1000 + !end_sec_decimal!"
-    
-    REM Calculate difference
-    set /a "duration_ms=end_ms - start_ms"
-    
-    REM Convert back to seconds and decimal part
-    set /a "duration_whole=duration_ms / 1000"
-    set /a "duration_decimal=duration_ms %% 1000"
-    
-    REM Ensure duration is positive
-    if !duration_ms! LEQ 0 (
-        call :show_error "Invalid duration: end time must be after start time."
-        exit /b 1
-    )
-
-    set "duration=!duration_whole!.!duration_decimal!"
-exit /b 0
-
-:display_timeline
-    REM Initialize timeline variables
-    set "timeline="
-    
-    REM Total duration in seconds
-    set /a "total_seconds=!total_minutes! * 60 + !total_seconds!"
-    
-    REM Calculate start position
-    set /a "start_seconds=!start_min! * 60 + !start_sec!"
-    set /a "start_chars=2 + (!start_seconds! * 48 / !total_seconds!)"
-    
-    REM Build the timeline string
-    set "timeline=-"
-    for /l %%i in (2,1,49) do (
-        if %%i EQU !start_chars! (
-            set "timeline=!timeline!#"
-        ) else (
-            set "timeline=!timeline!-"
-        )
-    )
-
-    echo.
-    echo Video Timeline  [!total_minutes!:!padded_total_seconds!.!total_seconds_decimal! total]
-    echo [!timeline!]
-    echo  !start_min!:!padded_start_seconds!.!start_sec_decimal!
-    if defined duration (
-        echo  !end_min!:!padded_end_seconds!.!end_sec_decimal!
-    ) else (
-        echo  (Full length)
-    )
-    echo.
-    
-    if not defined duration (
-        echo Selected: !start_min!:!padded_start_seconds!.!start_sec_decimal! - Full length
-    ) else (
-        echo Selected: !start_min!:!padded_start_seconds!.!start_sec_decimal! - !end_min!:!padded_end_seconds!.!end_sec_decimal!
-        echo Duration: !duration_whole!.!duration_decimal!
-    )
-    echo.
-exit /b 0
-
-:confirm_time_range
-    :confirm_loop
-    set /p "confirm=Is this range correct? (y/n): "
-    if /i "!confirm!"=="n" exit /b 1
-    if /i "!confirm!"=="y" exit /b 0
-    echo Please enter 'y' or 'n'
-    goto confirm_loop
-exit /b 0
+:show_error
+    echo Error: %~1
+exit /b 1
