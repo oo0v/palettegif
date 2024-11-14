@@ -232,12 +232,11 @@ exit /b 0
     echo.
     echo Video Timeline  [!total_minutes!:!padded_total_seconds!.!total_seconds_decimal! total]
     
-    set "timeline=--------------------------------------------------"
     set "before="
     for /l %%i in (0,1,!start_pos!) do set "before=!before!-"
-    set "after=-"
-    for /l %%i in (!start_pos!,1,49) do set "after=!after!-"
-    set "timeline=!before!#!after!"
+    set "after="
+    for /l %%i in (!start_pos!,1,49) do set "after=!after!#"
+    set "timeline=!before!!after!"
     
     echo [!timeline!]
     echo  !start_time!
