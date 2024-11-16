@@ -160,20 +160,19 @@ exit /b 0
         goto time_input_loop
     )
 
-    call :display_timeline
     call :confirm_time_range
     if errorlevel 1 goto time_input_loop
 exit /b 0
 
 :get_start_time
-    echo Maximum time is !total_minutes!:!padded_total_seconds!.!total_seconds_decimal!
+    echo Maximum time is !total_minutes!:!padded_total_seconds!.!padded_total_decimal!
     echo Press Enter without input to start from beginning (0:00.000)
     echo.
     
     :start_time_input_loop
     set "start_min=0"
     set "start_sec=0"
-    set "start_sec_decimal=0"
+    set "start_sec_decimal=000"
 
     set /p "temp_input=Start minutes (0-!total_minutes!): "
     if "!temp_input!"=="" (
@@ -205,43 +204,31 @@ exit /b 0
     
     set /p "temp_input=Start seconds decimal (0-999): "
     if "!temp_input!"=="" (
-        echo 0
+        set "start_sec_decimal=000"
     ) else (
-        if !temp_input! GEQ 1000 (
-            echo Error: Decimal part must be between 0 and 999.
-            goto start_time_input_loop
-        )
-        if !start_min! EQU !total_minutes! if !start_sec! EQU !total_seconds! (
-            if !temp_input! GTR %total_seconds_decimal:~0,3% (
-                echo Error: Start time exceeds video duration.
-                goto start_time_input_loop
-            )
-        )
-        set "start_sec_decimal=!temp_input!"
+        set "padded_decimal=00!temp_input!"
+        set "padded_decimal=!padded_decimal:~-3!"
+        set "start_sec_decimal=!padded_decimal!"
     )
 
     set "padded_start_seconds=0!start_sec!"
     set "padded_start_seconds=!padded_start_seconds:~-2!"
     set "start_time=!start_min!:!padded_start_seconds!.!start_sec_decimal!"
 
-    set /a "total_ms=(!total_minutes! * 60000) + (!total_seconds! * 1000) + %total_seconds_decimal:~0,3%"
-    set /a "start_ms=(!start_min! * 60000) + (!start_sec! * 1000) + !start_sec_decimal!"
+    set "temp_end_min=!end_min!"
+    set "temp_end_sec=!end_sec!"
+    set "temp_end_sec_decimal=!end_sec_decimal!"
     
-    set /a "start_pos=(start_ms * 50) / total_ms"
+    set "end_min=!total_minutes!"
+    set "end_sec=!total_seconds!"
+    set "end_sec_decimal=!total_seconds_decimal!"
     
-    echo.
-    echo Video Timeline  [!total_minutes!:!padded_total_seconds!.!total_seconds_decimal! total]
+    call :display_timeline
     
-    set "before="
-    for /l %%i in (0,1,!start_pos!) do set "before=!before!-"
-    set "after="
-    for /l %%i in (!start_pos!,1,49) do set "after=!after!#"
-    set "timeline=!before!!after!"
-    
-    echo [!timeline!]
-    echo  !start_time!
-    echo.
-    
+    set "end_min=!temp_end_min!"
+    set "end_sec=!temp_end_sec!"
+    set "end_sec_decimal=!temp_end_sec_decimal!"
+
     echo Selected start time: !start_time!
     echo.
 exit /b 0
@@ -292,11 +279,14 @@ exit /b 0
 
     :get_end_decimal
     set /p "temp_input=End seconds decimal (0-999): "
-    if not "!temp_input!"=="" (
-        if !temp_input! GEQ 1000 (
-            echo Error: Decimal part must be between 0 and 999.
-            goto get_end_decimal
+    if "!temp_input!"=="" (
+        if not "!end_min!!end_sec!"=="!total_minutes!!total_seconds!" (
+            set "end_sec_decimal=000"
         )
+    ) else (
+        set "padded_decimal=00!temp_input!"
+        set "padded_decimal=!padded_decimal:~-3!"
+        
         if !end_min! EQU !total_minutes! if !end_sec! EQU !total_seconds! (
             if !temp_input! GTR !total_seconds_decimal! (
                 echo Error: End time exceeds video duration.
@@ -309,57 +299,78 @@ exit /b 0
                 goto get_end_decimal
             )
         )
-        set "end_sec_decimal=!temp_input!"
+        set "end_sec_decimal=!padded_decimal!"
     )
 
     set "padded_end_seconds=0!end_sec!"
     set "padded_end_seconds=!padded_end_seconds:~-2!"
     set "end_time=!end_min!:!padded_end_seconds!.!end_sec_decimal!"
 
+    call :display_timeline
+
     echo Selected end time: !end_time!
     echo.
 exit /b 0
 
 :calculate_duration
-    set /a "start_ms=(!start_min! * 60 + !start_sec!) * 1000 + !start_sec_decimal!"
-    set /a "end_ms=(!end_min! * 60 + !end_sec!) * 1000 + !end_sec_decimal!"
+    set /a "start_ms=(!start_min! * 60000) + (!start_sec! * 1000) + !start_sec_decimal!"
+    set /a "end_ms=(!end_min! * 60000) + (!end_sec! * 1000) + !end_sec_decimal!"
     set /a "duration_ms=end_ms - start_ms"
-    set /a "duration_whole=duration_ms / 1000"
-    set /a "duration_decimal=duration_ms %% 1000"
     
     if !duration_ms! LEQ 0 (
         call :show_error "Invalid duration: end time must be after start time."
         exit /b 1
     )
-    set "duration=!duration_whole!.!duration_decimal!"
+    
+    set /a "duration_seconds=duration_ms / 1000"
+    set /a "duration_decimal=duration_ms %% 1000"
+    set "padded_duration_decimal=00!duration_decimal!"
+    set "padded_duration_decimal=!padded_duration_decimal:~-3!"
+    set "duration=!duration_seconds!.!padded_duration_decimal!"
 exit /b 0
 
 :display_timeline
-    set /a "total_ms=(!total_minutes! * 60000) + (!total_seconds! * 1000) + %total_seconds_decimal:~0,3%"
-    set /a "start_ms=(!start_min! * 60000) + (!start_sec! * 1000) + !start_sec_decimal!"
-    set /a "end_ms=(!end_min! * 60000) + (!end_sec! * 1000) + !end_sec_decimal!"
+    set /a "total_min_ms=!total_minutes! * 60000"
+    set /a "total_sec_ms=!total_seconds! * 1000"
+    set "padded_total_decimal=00!total_seconds_decimal!"
+    set "padded_total_decimal=!padded_total_decimal:~-3!"
+    set /a "total_ms=!total_min_ms! + !total_sec_ms!"
     
-    echo.
-    echo Video Timeline  [!total_minutes!:!padded_total_seconds!.!total_seconds_decimal! total]
+    set /a "start_min_ms=!start_min! * 60000"
+    set /a "start_sec_ms=!start_sec! * 1000"
+    set /a "start_ms=!start_min_ms! + !start_sec_ms!"
     
-    set /a "start_pos=(start_ms * 50) / total_ms"
-    set /a "end_pos=(end_ms * 50) / total_ms"
+    set /a "end_min_ms=!end_min! * 60000"
+    set /a "end_sec_ms=!end_sec! * 1000"
+    set /a "end_ms=!end_min_ms! + !end_sec_ms!"
     
-    set "filled="
-    for /l %%i in (0,1,!start_pos!) do set "filled=!filled!-"
-    for /l %%i in (!start_pos!,1,!end_pos!) do set "filled=!filled!#"
-    set "remaining="
-    for /l %%i in (!end_pos!,1,50) do set "remaining=!remaining!-"
-    set "timeline=!filled!!remaining!"
+    if !total_ms! LEQ 0 (
+        set "start_pos=0"
+        set "end_pos=50"
+    ) else (
+        set /a "start_pos=(!start_ms! * 50) / !total_ms!"
+        set /a "end_pos=(!end_ms! * 50) / !total_ms!"
+    )
+    
+    if !start_pos! LSS 0 set "start_pos=0"
+    if !end_pos! GTR 50 set "end_pos=50"
+    if !start_pos! GTR 50 set "start_pos=50"
+    if !end_pos! LSS 0 set "end_pos=0"
+    
+    set "timeline="
+    for /l %%i in (0,1,50) do (
+        if %%i LSS !start_pos! (
+            set "timeline=!timeline!-"
+        ) else if %%i LEQ !end_pos! (
+            set "timeline=!timeline!#"
+        ) else (
+            set "timeline=!timeline!-"
+        )
+    )
     
     echo [!timeline!]
-    echo  !start_min!:!padded_start_seconds!.!start_sec_decimal!
-    echo  !end_min!:!padded_end_seconds!.!end_sec_decimal!
-    echo.
-    echo Selected: !start_min!:!padded_start_seconds!.!start_sec_decimal! - !end_min!:!padded_end_seconds!.!end_sec_decimal!
-    if defined duration (
-        echo Duration: !duration!
-    )
+    if defined start_time echo  !start_time!
+    if defined end_time echo  !end_time!
     echo.
 exit /b 0
 
@@ -463,41 +474,27 @@ exit /b 0
     echo.
     echo Current aspect ratio: !original_width!:!original_height!
     echo Available aspect ratios:
-    echo 1. Original ^(no change^)
-    echo 2. 1:1 ^(square^)
-    echo 3. 16:9 ^(widescreen^)
-    echo 4. 4:3 ^(standard^)
-    echo 5. 9:16 ^(vertical^)
-    echo 6. Custom ^(e.g., 2:1^)
+    echo 0. Original ^(no change^)
+    echo 1. 1:1
+    echo 2. 4:3
     
     :aspect_ratio_input_loop
-    set /p "aspect_choice=Choose aspect ratio (1-6): "
+    set /p "aspect_choice=Choose aspect ratio (0-6): "
     
-    if "!aspect_choice!"=="1" (
+    if "!aspect_choice!"=="0" (
         set "aspect_ratio=0"
         set "aspect_ratio_num=0"
         set "aspect_ratio_den=0"
-    ) else if "!aspect_choice!"=="2" (
+    ) else if "!aspect_choice!"=="1" (
         set "aspect_ratio=1"
         set "aspect_ratio_num=1"
         set "aspect_ratio_den=1"
-    ) else if "!aspect_choice!"=="3" (
-        set "aspect_ratio=1.7778"
-        set "aspect_ratio_num=16"
-        set "aspect_ratio_den=9"
-    ) else if "!aspect_choice!"=="4" (
+    ) else if "!aspect_choice!"=="2" (
         set "aspect_ratio=1.3333"
         set "aspect_ratio_num=4"
         set "aspect_ratio_den=3"
-    ) else if "!aspect_choice!"=="5" (
-        set "aspect_ratio=0.5625"
-        set "aspect_ratio_num=9"
-        set "aspect_ratio_den=16"
-    ) else if "!aspect_choice!"=="6" (
-        call :get_custom_aspect_ratio
-        if errorlevel 1 goto aspect_ratio_input_loop
     ) else (
-        echo Invalid choice. Please enter a number between 1 and 6.
+        echo Invalid choice. Please enter a number between 0 and 2.
         goto aspect_ratio_input_loop
     )
     
@@ -507,36 +504,6 @@ exit /b 0
     ) else (
         echo Using original aspect ratio
     )
-exit /b 0
-
-:get_custom_aspect_ratio
-    echo Enter custom aspect ratio (width:height, e.g. 2:1):
-    set /p "custom_ratio="
-    
-    for /f "tokens=1,2 delims=:" %%a in ("!custom_ratio!") do (
-        set "aspect_ratio_num=%%a"
-        set "aspect_ratio_den=%%b"
-    )
-    
-    set "non_numeric="
-    for /f "delims=0123456789" %%a in ("!aspect_ratio_num!!aspect_ratio_den!") do set "non_numeric=%%a"
-    if defined non_numeric (
-        call :show_error "Please enter valid numbers for aspect ratio."
-        exit /b 1
-    )
-    
-    if !aspect_ratio_num! LEQ 0 (
-        call :show_error "Width must be greater than 0."
-        exit /b 1
-    )
-    if !aspect_ratio_den! LEQ 0 (
-        call :show_error "Height must be greater than 0."
-        exit /b 1
-    )
-    
-    set /a "aspect_ratio=(!aspect_ratio_num! * 10000) / !aspect_ratio_den!"
-    set /a "aspect_ratio_decimal=!aspect_ratio! %% 10000"
-    set /a "aspect_ratio=!aspect_ratio! / 10000"
 exit /b 0
 
 :get_size_input
