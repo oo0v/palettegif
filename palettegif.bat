@@ -479,7 +479,7 @@ exit /b 0
     echo 2. 4:3
     
     :aspect_ratio_input_loop
-    set /p "aspect_choice=Choose aspect ratio (0-6): "
+    set /p "aspect_choice=Choose aspect ratio (0-2): "
     
     if "!aspect_choice!"=="0" (
         set "aspect_ratio=0"
