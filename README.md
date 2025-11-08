@@ -4,7 +4,7 @@ Batch script for converting video files to GIFs with optimized palettes and file
 
 ## Requirements
 
-- Windows 7+
+- Windows 10+
 - FFmpeg in PATH
 
 ## Features
@@ -26,7 +26,4 @@ Either:
 - **FPS**: Output frame rate
 - **Height**: Output resolution (width scales proportionally)
 - **Target Size**: Desired file size in MB
-
-## License
-
-CC0 License
+- 
