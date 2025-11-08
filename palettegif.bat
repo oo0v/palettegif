@@ -651,16 +651,19 @@ exit /b 0
         set "crop_filter="
     )
 
-    ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" ^
-        -vf "fps=!fps!,scale=-1:!current_height!:flags=spline!crop_filter!,palettegen" ^
-        -update 1 -frames:v 1 "!palette!"
-    
+    ffmpeg -y -v warning -stats ^
+      -ss !start_time! -t !duration! -i "!input!" ^
+      -vf "fps=!fps!,scale=-1:!current_height!:flags=lanczos!crop_filter!,palettegen=stats_mode=single" ^
+      -frames:v 1 -update 1 "!palette!"
+
     if errorlevel 1 (
         call :show_error "Error occurred while generating palette."
         if exist "!palette!" del "!palette!"
         exit /b 1
     )
 exit /b 0
+
+
 
 :generate_gif
     set "input=%~1"
@@ -675,15 +678,16 @@ exit /b 0
     )
 
     ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" -i "!palette!" ^
-        -filter_complex "[0:v] fps=!fps!,scale=-1:!current_height!:flags=spline!crop_filter! [x]; [x][1:v] paletteuse" ^
+        -filter_complex "[0:v] fps=!fps!,scale=-1:!current_height!:flags=lanczos!crop_filter! [x];[x][1:v] paletteuse=dither=bayer:bayer_scale=1" ^
         -c:v gif "!output!"
-    
+
     if errorlevel 1 (
         call :show_error "Error occurred while generating GIF."
         if exist "!palette!" del "!palette!"
         exit /b 1
     )
 exit /b 0
+
 
 :check_file_size
     set "output=%~1"
