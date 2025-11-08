@@ -6,13 +6,11 @@ set "CONFIG_INITIAL_TARGET_SIZE_MB=15"
 set "CONFIG_MIN_HEIGHT=40"
 set "CONFIG_MAX_TRIES=10"
 set "CONFIG_TIMELINE_WIDTH=50"
-set "CONFIG_DEFAULT_ASPECT_RATIO=0"
 
 set "fps=!CONFIG_INITIAL_FPS!"
 set "target_size_mb=!CONFIG_INITIAL_TARGET_SIZE_MB!"
 set "min_height=!CONFIG_MIN_HEIGHT!"
 set "max_tries=!CONFIG_MAX_TRIES!"
-set "aspect_ratio=!CONFIG_DEFAULT_ASPECT_RATIO!"
     
 set "start_min=0"
 set "start_sec=0"
@@ -36,7 +34,7 @@ set "padded_total_seconds=!padded_total_seconds:~-2!"
 echo =====================================
 echo Input file: !input_file!
 echo Resolution: !original_width!x!original_height!
-echo Duration: !total_minutes!:!padded_total_seconds!.!total_seconds_decimal!
+echo Duration: !total_minutes!:!padded_total_seconds!.!total_seconds_decimal:~0,3!
 echo Frame count: !frame_count! frames
 echo Source FPS: !source_fps! (!source_fps_raw!)
 echo =====================================
@@ -53,17 +51,18 @@ if /i "!specify_time!"=="y" (
 ) else if /i "!specify_time!"=="n" (
     set "start_min=0"
     set "start_sec=0"
-    set "start_sec_decimal=0"
+    set "start_sec_decimal=000"
+
     set "end_min=!total_minutes!"
     set "end_sec=!total_seconds!"
-    set "end_sec_decimal=!total_seconds_decimal!"
-    
+    set "end_sec_decimal=!total_seconds_decimal:~0,3!"
+
     set "start_time=0:00.000"
-    set "end_time=!total_minutes!:!padded_total_seconds!.!total_seconds_decimal!"
-    
+    set "end_time=!total_minutes!:!padded_total_seconds!.!end_sec_decimal:~0,3!"
+
     call :calculate_duration
     if errorlevel 1 goto error_exit
-    
+
     echo Using full video length:
     echo Start: !start_time!
     echo End: !end_time!
@@ -113,34 +112,64 @@ goto confirm_conversion
 
 :get_video_info
     set "video_file=%~1"
-    
-    for /f "tokens=1,2 delims=." %%a in ('ffprobe -v error -show_entries format^=duration -of default^=noprint_wrappers^=1:nokey^=1 "!video_file!"') do (
+
+    for /f "usebackq tokens=1,2 delims=." %%a in (`ffprobe -v error -show_entries format^=duration -of default^=noprint_wrappers^=1:nokey^=1 "%video_file%"`) do (
         set "total_duration_int=%%a"
-        set "total_duration=%%a.%%b"
-        set /a "total_minutes=%%a/60"
-        set /a "total_seconds=%%a%%60"
         set "total_seconds_decimal=%%b"
     )
-    
-    for /f "tokens=*" %%a in ('ffprobe -v error -select_streams v:0 -show_entries "stream=width,height,r_frame_rate,nb_frames,pix_fmt" -of csv^=s^=x:p^=0 "!video_file!"') do (
-        for /f "tokens=1-5 delims=x," %%b in ("%%a") do (
-            set "original_width=%%b"
-            set "original_height=%%c"
-            set "colorspace=%%d"
-            set "source_fps_raw=%%e"
-            set "frame_count=%%f"
+
+    if not defined total_duration_int (
+        call :show_error "Could not read duration."
+        exit /b 1
+    )
+    if not defined total_seconds_decimal set "total_seconds_decimal=000"
+
+    set /a "total_minutes=total_duration_int / 60"
+    set /a "total_seconds=total_duration_int %% 60"
+
+    for /f "usebackq delims=" %%a in (`
+        ffprobe -v error -select_streams v:0 -show_entries stream^=width -of default^=noprint_wrappers^=1:nokey^=1 "%video_file%"
+    `) do set "original_width=%%a"
+
+    for /f "usebackq delims=" %%a in (`
+        ffprobe -v error -select_streams v:0 -show_entries stream^=height -of default^=noprint_wrappers^=1:nokey^=1 "%video_file%"
+    `) do set "original_height=%%a"
+
+    for /f "usebackq delims=" %%a in (`
+        ffprobe -v error -select_streams v:0 -show_entries stream^=r_frame_rate -of default^=noprint_wrappers^=1:nokey^=1 "%video_file%"
+    `) do set "source_fps_raw=%%a"
+
+    for /f "usebackq delims=" %%a in (`
+        ffprobe -v error -select_streams v:0 -show_entries stream^=nb_frames -of default^=noprint_wrappers^=1:nokey^=1 "%video_file%"
+    `) do set "frame_count=%%a"
+
+    for /f "usebackq delims=" %%a in (`
+        ffprobe -v error -select_streams v:0 -show_entries stream^=pix_fmt -of default^=noprint_wrappers^=1:nokey^=1 "%video_file%"
+    `) do set "pix_fmt=%%a"
+
+    set "source_fps=0"
+    if defined source_fps_raw (
+        for /f "tokens=1,2 delims=/" %%a in ("!source_fps_raw!") do (
+            set "source_fps_num=%%a"
+            set "source_fps_den=%%b"
+        )
+
+        if not defined source_fps_den (
+            set "source_fps=!source_fps_num!"
+        ) else (
+            if "!source_fps_den!"=="0" (
+                set "source_fps=!source_fps_num!"
+            ) else (
+                set /a "source_fps=!source_fps_num! / !source_fps_den!"
+            )
         )
     )
 
-    for /f "tokens=1,2 delims=/" %%a in ("!source_fps_raw!") do (
-        set /a "source_fps_num=%%a"
-        set /a "source_fps_den=%%b"
-        set /a "source_fps=!source_fps_num! / !source_fps_den!"
-    )
-
-    if "!frame_count!"=="" (
+    if /I "!frame_count!"=="N/A" set "frame_count="
+    if not defined frame_count (
         set /a "frame_count=!source_fps! * !total_duration_int!"
     )
+
 exit /b 0
 
 :get_time_range
@@ -165,7 +194,7 @@ exit /b 0
 exit /b 0
 
 :get_start_time
-    echo Maximum time is !total_minutes!:!padded_total_seconds!.!padded_total_decimal!
+    echo Maximum time is !total_minutes!:!padded_total_seconds!.!total_seconds_decimal:~0,3!
     echo Press Enter without input to start from beginning (0:00.000)
     echo.
     
@@ -208,6 +237,12 @@ exit /b 0
     ) else (
         set "padded_decimal=00!temp_input!"
         set "padded_decimal=!padded_decimal:~-3!"
+        if !start_min! EQU !total_minutes! if !start_sec! EQU !total_seconds! (
+            if !temp_input! GTR !total_seconds_decimal! (
+                echo Error: Start time exceeds video duration.
+                goto start_time_input_loop
+            )
+        )
         set "start_sec_decimal=!padded_decimal!"
     )
 
@@ -221,7 +256,7 @@ exit /b 0
     
     set "end_min=!total_minutes!"
     set "end_sec=!total_seconds!"
-    set "end_sec_decimal=!total_seconds_decimal!"
+    set "end_sec_decimal=!total_seconds_decimal:~0,3!"
     
     call :display_timeline
     
@@ -234,7 +269,7 @@ exit /b 0
 exit /b 0
 
 :get_end_time
-    echo Press Enter without input to use full video length (!total_minutes!:!padded_total_seconds!.!total_seconds_decimal!)
+    echo Press Enter without input to use full video length (!total_minutes!:!padded_total_seconds!.!total_seconds_decimal:~0,3!)
     echo.
 
     :end_time_input_loop
@@ -290,7 +325,7 @@ exit /b 0
         if !end_min! EQU !total_minutes! if !end_sec! EQU !total_seconds! (
             if !temp_input! GTR !total_seconds_decimal! (
                 echo Error: End time exceeds video duration.
-                goto get_end_decimal
+                goto end_time_input_loop
             )
         )
         if !end_min! EQU !start_min! if !end_sec! EQU !start_sec! (
@@ -304,6 +339,7 @@ exit /b 0
 
     set "padded_end_seconds=0!end_sec!"
     set "padded_end_seconds=!padded_end_seconds:~-2!"
+    set "end_sec_decimal=!end_sec_decimal:~0,3!"
     set "end_time=!end_min!:!padded_end_seconds!.!end_sec_decimal!"
 
     call :display_timeline
@@ -390,10 +426,10 @@ exit /b 0
     call :get_height_input
     if errorlevel 1 exit /b 1
 
-    call :get_aspect_ratio_input
+    call :get_size_input
     if errorlevel 1 exit /b 1
 
-    call :get_size_input
+    call :select_dither
     if errorlevel 1 exit /b 1
 
     echo.
@@ -404,12 +440,6 @@ exit /b 0
     echo Duration: !duration!
     echo Output FPS: !fps!
     echo Height: !height!
-    if !aspect_ratio! GTR 0 (
-        set /a "target_width=!height! * !aspect_ratio_num! / !aspect_ratio_den!"
-        echo Aspect Ratio: !aspect_ratio_num!:!aspect_ratio_den! ^(!target_width!x!height!^)
-    ) else (
-        echo Aspect Ratio: Original
-    )
     echo Target size: !target_size_mb! MB
     echo ======================================
 exit /b 0
@@ -470,42 +500,6 @@ exit /b 0
     )
 exit /b 0
 
-:get_aspect_ratio_input
-    echo.
-    echo Current aspect ratio: !original_width!:!original_height!
-    echo Available aspect ratios:
-    echo 0. Original ^(no change^)
-    echo 1. 1:1
-    echo 2. 4:3
-    
-    :aspect_ratio_input_loop
-    set /p "aspect_choice=Choose aspect ratio (0-2): "
-    
-    if "!aspect_choice!"=="0" (
-        set "aspect_ratio=0"
-        set "aspect_ratio_num=0"
-        set "aspect_ratio_den=0"
-    ) else if "!aspect_choice!"=="1" (
-        set "aspect_ratio=1"
-        set "aspect_ratio_num=1"
-        set "aspect_ratio_den=1"
-    ) else if "!aspect_choice!"=="2" (
-        set "aspect_ratio=1.3333"
-        set "aspect_ratio_num=4"
-        set "aspect_ratio_den=3"
-    ) else (
-        echo Invalid choice. Please enter a number between 0 and 2.
-        goto aspect_ratio_input_loop
-    )
-    
-    if !aspect_ratio! GTR 0 (
-        set /a "target_width=!height! * !aspect_ratio_num! / !aspect_ratio_den!"
-        echo Selected aspect ratio: !aspect_ratio_num!:!aspect_ratio_den! ^(!target_width!x!height!^)
-    ) else (
-        echo Using original aspect ratio
-    )
-exit /b 0
-
 :get_size_input
     echo.
     :retry_size
@@ -529,28 +523,38 @@ exit /b 0
     set /a "target_size=!target_size_mb! * 1024 * 1024"
 exit /b 0
 
+:select_dither
+    echo.
+    set /p "ans=Enable dithering? (y/n): "
+    if /I "!ans!"=="y" (
+        set "dither_option==dither=bayer:bayer_scale=1"
+    ) else (
+        set "dither_option="
+    )
+exit /b 0
+
+
+
 :process_gif
-    set "output_file=!input_file!.gif"
-    set "palette_file=!input_file!_palette.png"
-    
-    set "output_file=!output_file:.mov.gif=.gif!"
-    set "output_file=!output_file:.mp4.gif=.gif!"
-    set "output_file=!output_file:.avi.gif=.gif!"
-    set "output_file=!output_file:.wmv.gif=.gif!"
-    set "output_file=!output_file:.flv.gif=.gif!"
-    set "output_file=!output_file:.mkv.gif=.gif!"
-    set "output_file=!output_file:.mpg.gif=.gif!"
-    set "output_file=!output_file:.3gp.gif=.gif!"
-    set "output_file=!output_file:.ogv.gif=.gif!"
-    set "output_file=!output_file:.webm.gif=.gif!"
-    set "output_file=!output_file:.mpeg.gif=.gif!"
+    for %%A in ("!input_file!") do (
+        set "output_file=%%~dpnA.gif"
+        set "palette_file=%%~dpnA_palette.png"
+    )
 
     set /a "low_height=!min_height!"
     set /a "high_height=!height!"
     set "tries=0"
     set "current_height=!height!"
     set "last_height=0"
-    set "last_aspect=none"
+
+    echo ----------------------------------------------------
+    echo [PALETTE COMMAND]
+    echo ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input_file!" -vf "fps=!fps!,scale=-1:!current_height!:flags=lanczos,palettegen=stats_mode=single" -frames:v 1 -update 1 "!palette_file!"
+    echo.
+    echo [GIF COMMAND]
+    echo ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input_file!" -i "!palette_file!" -filter_complex "[0:v] fps=!fps!,scale=-1:!current_height!:flags=lanczos [x];[x][1:v] paletteuse!dither_option!" -c:v gif "!output_file!"
+    echo ----------------------------------------------------
+    echo.
 
     :generate_loop
         set /a "tries+=1"
@@ -561,8 +565,6 @@ exit /b 0
         echo Time parameters: Start=!start_time!s Duration=!duration!s
 
         if !current_height! NEQ !last_height! (
-            set "regenerate_palette=1"
-        ) else if !aspect_ratio! NEQ !last_aspect! (
             set "regenerate_palette=1"
         ) else (
             set "regenerate_palette=0"
@@ -576,7 +578,6 @@ exit /b 0
                 exit /b 1
             )
             set "last_height=!current_height!"
-            set "last_aspect=!aspect_ratio!"
         ) else (
             echo Reusing existing palette
         )
@@ -644,17 +645,9 @@ exit /b 0
     set "input=%~1"
     set "palette=%~2"
 
-    if !aspect_ratio! GTR 0 (
-        set /a "crop_width=!current_height! * !aspect_ratio_num! / !aspect_ratio_den!"
-        set "crop_filter=,crop=!crop_width!:!current_height!"
-    ) else (
-        set "crop_filter="
-    )
-
-    ffmpeg -y -v warning -stats ^
-      -ss !start_time! -t !duration! -i "!input!" ^
-      -vf "fps=!fps!,scale=-1:!current_height!:flags=lanczos!crop_filter!,palettegen=stats_mode=single" ^
-      -frames:v 1 -update 1 "!palette!"
+    ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" ^
+        -vf "fps=!fps!,scale=-1:!current_height!:flags=lanczos,palettegen=stats_mode=single" ^
+        -frames:v 1 -update 1 "!palette!"
 
     if errorlevel 1 (
         call :show_error "Error occurred while generating palette."
@@ -664,21 +657,13 @@ exit /b 0
 exit /b 0
 
 
-
 :generate_gif
     set "input=%~1"
     set "palette=%~2"
     set "output=%~3"
 
-    if !aspect_ratio! GTR 0 (
-        set /a "crop_width=!current_height! * !aspect_ratio_num! / !aspect_ratio_den!"
-        set "crop_filter=,crop=!crop_width!:!current_height!"
-    ) else (
-        set "crop_filter="
-    )
-
     ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" -i "!palette!" ^
-        -filter_complex "[0:v] fps=!fps!,scale=-1:!current_height!:flags=lanczos!crop_filter! [x];[x][1:v] paletteuse=dither=bayer:bayer_scale=1" ^
+        -filter_complex "[0:v] fps=!fps!,scale=-1:!current_height!:flags=lanczos [x];[x][1:v] paletteuse!dither_option!" ^
         -c:v gif "!output!"
 
     if errorlevel 1 (
@@ -703,11 +688,6 @@ exit /b 0
         echo Output: !output_file!
         echo Original resolution: !original_width!x!original_height!
         echo Final height: !current_height!
-        if !aspect_ratio! GTR 0 (
-            set /a "final_width=!current_height! * !aspect_ratio_num! / !aspect_ratio_den!"
-            echo Final resolution: !final_width!x!current_height!
-            echo Aspect ratio: !aspect_ratio_num!:!aspect_ratio_den!
-        )
         echo Time range: !start_time! - !end_time!
         echo Duration: !duration!
         echo Source FPS: !source_fps!
