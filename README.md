@@ -26,4 +26,3 @@ Either:
 - **FPS**: Output frame rate
 - **Height**: Output resolution (width scales proportionally)
 - **Target Size**: Desired file size in MB
-- 
