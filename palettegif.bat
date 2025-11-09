@@ -527,13 +527,11 @@ exit /b 0
     echo.
     set /p "ans=Enable dithering? (y/n): "
     if /I "!ans!"=="y" (
-        set "dither_option==dither=bayer:bayer_scale=1"
+        set "dither_option==dither=floyd_steinberg"
     ) else (
         set "dither_option="
     )
 exit /b 0
-
-
 
 :process_gif
     for %%A in ("!input_file!") do (
@@ -549,7 +547,7 @@ exit /b 0
 
     echo ----------------------------------------------------
     echo [PALETTE COMMAND]
-    echo ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input_file!" -vf "fps=!fps!,scale=-1:!current_height!:flags=lanczos,palettegen=stats_mode=single" -frames:v 1 -update 1 "!palette_file!"
+    echo ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input_file!" -vf "fps=!fps!,scale=-1:!current_height!:flags=lanczos,palettegen=stats_mode=full" -frames:v 1 -update 1 "!palette_file!"
     echo.
     echo [GIF COMMAND]
     echo ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input_file!" -i "!palette_file!" -filter_complex "[0:v] fps=!fps!,scale=-1:!current_height!:flags=lanczos [x];[x][1:v] paletteuse!dither_option!" -c:v gif "!output_file!"
@@ -646,7 +644,7 @@ exit /b 0
     set "palette=%~2"
 
     ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" ^
-        -vf "fps=!fps!,scale=-1:!current_height!:flags=lanczos,palettegen=stats_mode=single" ^
+        -vf "fps=!fps!,scale=-1:!current_height!:flags=lanczos,palettegen=stats_mode=full" ^
         -frames:v 1 -update 1 "!palette!"
 
     if errorlevel 1 (
