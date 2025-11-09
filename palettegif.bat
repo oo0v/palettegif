@@ -1,8 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
 
-set "dither=floyd_steinberg"
-
 set "CONFIG_INITIAL_FPS=20"
 set "CONFIG_INITIAL_TARGET_SIZE_MB=15"
 set "CONFIG_MIN_HEIGHT=40"
@@ -432,6 +430,9 @@ exit /b 0
     call :get_size_input
     if errorlevel 1 exit /b 1
 
+    call :select_scaler
+    if errorlevel 1 exit /b 1
+
     call :select_dither
     if errorlevel 1 exit /b 1
 
@@ -444,7 +445,8 @@ exit /b 0
     echo Output FPS: !fps!
     echo Height: !height!
     echo Target size: !target_size_mb! MB
-    echo Dithering: !dither!
+    echo Scaler: !scaler_filter!
+    echo Dithering: !dither_option!
     echo ======================================
 exit /b 0
 
@@ -527,13 +529,58 @@ exit /b 0
     set /a "target_size=!target_size_mb! * 1024 * 1024"
 exit /b 0
 
+:select_scaler
+    echo.
+    echo Select zscale algorithm:
+    echo   1) lanczos    - (general)
+    echo   2) spline36   - (anime/toon)
+    echo   3) spline16   - (anime/toon)
+    echo   4) bicubic    - (balanced)
+    echo   5) bilinear   - (fast)
+    echo   6) point      - (pixel art)
+    set "ans=1"
+    set /p "ans=Enter 1-6 (default 1): "
+
+    if "!ans!"=="1" (
+        set "scaler_filter=lanczos"
+    ) else if "!ans!"=="2" (
+        set "scaler_filter=spline36"
+    ) else if "!ans!"=="3" (
+        set "scaler_filter=spline16"
+    ) else if "!ans!"=="4" (
+        set "scaler_filter=bicubic"
+    ) else if "!ans!"=="5" (
+        set "scaler_filter=bilinear"
+    ) else if "!ans!"=="6" (
+        set "scaler_filter=point"
+    ) else (
+        set "scaler_filter=lanczos"
+    )
+exit /b 0
+
 :select_dither
     echo.
-    set /p "ans=Enable dithering? (y/n): "
-    if /I "!ans!"=="y" (
-        set "dither_option=dither=!dither!"
+    echo Select dithering algorithm:
+    echo   1) floyd_steinberg  (general)
+    echo   2) bayer            (stable)
+    echo   3) sierra2          (smooth)
+    echo   4) sierra2_4a       (lighter)
+    echo   5) none
+    set "ans=1"
+    set /p "ans=Enter 1-5 (default 1): "
+
+    if "!ans!"=="1" (
+        set "dither_option=floyd_steinberg"
+    ) else if "!ans!"=="2" (
+        set "dither_option=bayer"
+    ) else if "!ans!"=="3" (
+        set "dither_option=sierra2"
+    ) else if "!ans!"=="4" (
+        set "dither_option=sierra2_4a"
+    ) else if "!ans!"=="5" (
+        set "dither_option=none"
     ) else (
-        set "dither_option="
+        set "dither_option=floyd_steinberg"
     )
 exit /b 0
 
@@ -548,12 +595,6 @@ exit /b 0
     set "tries=0"
     set "current_height=!height!"
     set "last_height=0"
-
-    if defined dither_option (
-        set "palette_filter=[x][1:v]paletteuse=!dither_option!"
-    ) else (
-        set "palette_filter=[x][1:v]paletteuse"
-    )
 
     :generate_loop
         set /a "tries+=1"
@@ -644,7 +685,7 @@ exit /b 0
     set "input=%~1"
     set "palette=%~2"
 
-    set "CMD=ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" -vf "fps=!fps!,scale=-1:!current_height!:flags=lanczos,palettegen=stats_mode=full" -update 1 -frames:v 1 "!palette!""
+    set "CMD=ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" -vf "fps=!fps!,zscale=w=-1:h=!current_height!:filter=!scaler_filter!,palettegen=stats_mode=full" -update 1 -frames:v 1 "!palette!""
 
     echo !CMD!
     echo.
@@ -662,7 +703,7 @@ exit /b 0
     set "palette=%~2"
     set "output=%~3"
 
-    set "CMD=ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" -i "!palette!" -lavfi "fps=!fps!,scale=-1:!current_height!:flags=lanczos [x]; !palette_filter!" -loop 0 "!output!""
+    set "CMD=ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" -i "!palette!" -lavfi "fps=!fps!,zscale=w=-1:h=!current_height!:filter=!scaler_filter! [x]; [x][1:v]paletteuse=!dither_option!" -loop 0 "!output!""
 
     echo !CMD!
     echo.
