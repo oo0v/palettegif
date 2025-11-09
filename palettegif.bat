@@ -31,6 +31,7 @@ if errorlevel 1 goto error_exit
 
 set "padded_total_seconds=0!total_seconds!"
 set "padded_total_seconds=!padded_total_seconds:~-2!"
+
 echo =====================================
 echo Input file: !input_file!
 echo Resolution: !original_width!x!original_height!
@@ -205,7 +206,7 @@ exit /b 0
 
     set /p "temp_input=Start minutes (0-!total_minutes!): "
     if "!temp_input!"=="" (
-        echo 0
+        set "start_min=0"
     ) else (
         if !temp_input! GTR !total_minutes! (
             echo Error: Minutes must be between 0 and !total_minutes!.
@@ -216,7 +217,7 @@ exit /b 0
     
     set /p "temp_input=Start seconds (0-59): "
     if "!temp_input!"=="" (
-        echo 0
+        set "start_sec=0"
     ) else (
         if !temp_input! GEQ 60 (
             echo Error: Seconds must be between 0 and 59.
@@ -441,6 +442,7 @@ exit /b 0
     echo Output FPS: !fps!
     echo Height: !height!
     echo Target size: !target_size_mb! MB
+    echo Dithering: !dither_option!
     echo ======================================
 exit /b 0
 
@@ -527,7 +529,7 @@ exit /b 0
     echo.
     set /p "ans=Enable dithering? (y/n): "
     if /I "!ans!"=="y" (
-        set "dither_option==dither=floyd_steinberg"
+        set "dither_option=dither=floyd_steinberg"
     ) else (
         set "dither_option="
     )
@@ -545,14 +547,11 @@ exit /b 0
     set "current_height=!height!"
     set "last_height=0"
 
-    echo ----------------------------------------------------
-    echo [PALETTE COMMAND]
-    echo ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input_file!" -vf "fps=!fps!,scale=-1:!current_height!:flags=lanczos,palettegen=stats_mode=full" -frames:v 1 -update 1 "!palette_file!"
-    echo.
-    echo [GIF COMMAND]
-    echo ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input_file!" -i "!palette_file!" -filter_complex "[0:v] fps=!fps!,scale=-1:!current_height!:flags=lanczos [x];[x][1:v] paletteuse!dither_option!" -c:v gif "!output_file!"
-    echo ----------------------------------------------------
-    echo.
+    if defined dither_option (
+        set "palette_filter=[x][1:v]paletteuse=!dither_option!"
+    ) else (
+        set "palette_filter=[x][1:v]paletteuse"
+    )
 
     :generate_loop
         set /a "tries+=1"
@@ -643,10 +642,12 @@ exit /b 0
     set "input=%~1"
     set "palette=%~2"
 
-    ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" ^
-        -vf "fps=!fps!,scale=-1:!current_height!:flags=lanczos,palettegen=stats_mode=full" ^
-        -frames:v 1 -update 1 "!palette!"
+    set "CMD=ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" -vf "fps=!fps!,scale=-1:!current_height!:flags=lanczos,palettegen=stats_mode=full" -update 1 -frames:v 1 "!palette!""
 
+    echo !CMD!
+    echo.
+
+    call !CMD!
     if errorlevel 1 (
         call :show_error "Error occurred while generating palette."
         if exist "!palette!" del "!palette!"
@@ -654,23 +655,23 @@ exit /b 0
     )
 exit /b 0
 
-
 :generate_gif
     set "input=%~1"
     set "palette=%~2"
     set "output=%~3"
 
-    ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" -i "!palette!" ^
-        -filter_complex "[0:v] fps=!fps!,scale=-1:!current_height!:flags=lanczos [x];[x][1:v] paletteuse!dither_option!" ^
-        -c:v gif "!output!"
+    set "CMD=ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" -i "!palette!" -lavfi "fps=!fps!,scale=-1:!current_height!:flags=lanczos [x]; !palette_filter!" -loop 0 "!output!""
 
+    echo !CMD!
+    echo.
+
+    call !CMD!
     if errorlevel 1 (
         call :show_error "Error occurred while generating GIF."
-        if exist "!palette!" del "!palette!"
+        if exist "!output!" del "!output!"
         exit /b 1
     )
 exit /b 0
-
 
 :check_file_size
     set "output=%~1"
