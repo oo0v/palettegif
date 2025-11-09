@@ -595,6 +595,9 @@ exit /b 0
     set "tries=0"
     set "current_height=!height!"
     set "last_height=0"
+    
+    if !current_height! lss 2 set /a current_height=2
+    set /a "current_height=(current_height/2)*2"
 
     :generate_loop
         set /a "tries+=1"
@@ -654,6 +657,10 @@ exit /b 0
             )
             set /a "high_height=current_height - 1"
             set /a "current_height=(low_height + high_height) / 2"
+
+            if !current_height! lss 2 set /a current_height=2
+            set /a "current_height=(current_height/2)*2"
+
             if !current_height! LSS !min_height! (
                 set "current_height=!min_height!"
             )
@@ -671,6 +678,9 @@ exit /b 0
             )
             set /a "low_height=current_height + 1"
             set /a "current_height=(low_height + high_height) / 2"
+
+            if !current_height! lss 2 set /a current_height=2
+            set /a "current_height=(current_height/2)*2"
         )
         
         if !current_height! EQU !height! (
