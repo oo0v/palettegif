@@ -538,8 +538,8 @@ exit /b 0
     echo   4) bicubic    - (balanced)
     echo   5) bilinear   - (fast)
     echo   6) point      - (pixel art)
-    set "ans=1"
-    set /p "ans=Enter 1-6 (default 1): "
+    set "ans=2"
+    set /p "ans=Enter 1-6 (default 2): "
 
     if "!ans!"=="1" (
         set "scaler_filter=lanczos"
@@ -554,7 +554,7 @@ exit /b 0
     ) else if "!ans!"=="6" (
         set "scaler_filter=point"
     ) else (
-        set "scaler_filter=lanczos"
+        set "scaler_filter=spline36"
     )
 exit /b 0
 
@@ -566,8 +566,8 @@ exit /b 0
     echo   3) sierra2          (smooth)
     echo   4) sierra2_4a       (lighter)
     echo   5) none
-    set "ans=1"
-    set /p "ans=Enter 1-5 (default 1): "
+    set "ans=3"
+    set /p "ans=Enter 1-5 (default 3): "
 
     if "!ans!"=="1" (
         set "dither_option=floyd_steinberg"
@@ -580,7 +580,7 @@ exit /b 0
     ) else if "!ans!"=="5" (
         set "dither_option=none"
     ) else (
-        set "dither_option=floyd_steinberg"
+        set "dither_option=sierra2"
     )
 exit /b 0
 
@@ -595,11 +595,10 @@ exit /b 0
     set "tries=0"
     set "current_height=!height!"
     set "last_height=0"
-    
-    if !current_height! lss 2 set /a current_height=2
-    set /a "current_height=(current_height/2)*2"
 
     :generate_loop
+        set /a "current_height=(current_height/2)*2"
+
         set /a "tries+=1"
         
         echo.
@@ -657,8 +656,6 @@ exit /b 0
             )
             set /a "high_height=current_height - 1"
             set /a "current_height=(low_height + high_height) / 2"
-
-            if !current_height! lss 2 set /a current_height=2
             set /a "current_height=(current_height/2)*2"
 
             if !current_height! LSS !min_height! (
@@ -678,8 +675,6 @@ exit /b 0
             )
             set /a "low_height=current_height + 1"
             set /a "current_height=(low_height + high_height) / 2"
-
-            if !current_height! lss 2 set /a current_height=2
             set /a "current_height=(current_height/2)*2"
         )
         
