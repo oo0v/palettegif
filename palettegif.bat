@@ -68,7 +68,6 @@ if /i "!specify_time!"=="y" (
     echo Start: !start_time!
     echo End: !end_time!
     echo Duration: !duration!
-    echo.
 ) else (
     echo Please enter 'y' or 'n'
     echo.
@@ -531,13 +530,13 @@ exit /b 0
 
 :select_scaler
     echo.
-    echo Select zscale algorithm:
-    echo   1) lanczos    - (general)
-    echo   2) spline36   - (anime/toon)
-    echo   3) spline16   - (anime/toon)
-    echo   4) bicubic    - (balanced)
-    echo   5) bilinear   - (fast)
-    echo   6) point      - (pixel art)
+    echo Select scale algorithm:
+    echo   1) lanczos    (general)
+    echo   2) spline36   (anime/toon)
+    echo   3) spline16   (anime/toon)
+    echo   4) bicubic    (balanced/toon)
+    echo   5) bilinear   (fast)
+    echo   6) point      (pixel art)
     set "ans=2"
     set /p "ans=Enter 1-6 (default 2): "
 
@@ -566,8 +565,8 @@ exit /b 0
     echo   3) sierra2          (smooth)
     echo   4) sierra2_4a       (lighter)
     echo   5) none
-    set "ans=3"
-    set /p "ans=Enter 1-5 (default 3): "
+    set "ans=5"
+    set /p "ans=Enter 1-5 (default 5): "
 
     if "!ans!"=="1" (
         set "dither_option=floyd_steinberg"
@@ -580,7 +579,7 @@ exit /b 0
     ) else if "!ans!"=="5" (
         set "dither_option=none"
     ) else (
-        set "dither_option=sierra2"
+        set "dither_option=none"
     )
 exit /b 0
 
@@ -690,7 +689,7 @@ exit /b 0
     set "input=%~1"
     set "palette=%~2"
 
-    set "CMD=ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" -vf "fps=!fps!,zscale=w=-1:h=!current_height!:filter=!scaler_filter!,palettegen=stats_mode=full" -update 1 -frames:v 1 "!palette!""
+    set "CMD=ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" -vf "fps=!fps!,zscale=w=-1:h=!current_height!:filter=!scaler_filter!,format=gbrp,palettegen=stats_mode=full" -update 1 -frames:v 1 "!palette!""
 
     echo !CMD!
     echo.
@@ -708,7 +707,7 @@ exit /b 0
     set "palette=%~2"
     set "output=%~3"
 
-    set "CMD=ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" -i "!palette!" -lavfi "fps=!fps!,zscale=w=-1:h=!current_height!:filter=!scaler_filter! [x]; [x][1:v]paletteuse=!dither_option!" -loop 0 "!output!""
+    set "CMD=ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" -i "!palette!" -lavfi "fps=!fps!,zscale=w=-1:h=!current_height!:filter=!scaler_filter!,format=gbrp [x]; [x][1:v]paletteuse=!dither_option!" -loop 0 "!output!""
 
     echo !CMD!
     echo.
