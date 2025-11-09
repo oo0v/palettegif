@@ -1,6 +1,8 @@
 @echo off
 setlocal enabledelayedexpansion
 
+set "dither=floyd_steinberg"
+
 set "CONFIG_INITIAL_FPS=20"
 set "CONFIG_INITIAL_TARGET_SIZE_MB=15"
 set "CONFIG_MIN_HEIGHT=40"
@@ -442,7 +444,7 @@ exit /b 0
     echo Output FPS: !fps!
     echo Height: !height!
     echo Target size: !target_size_mb! MB
-    echo Dithering: !dither_option!
+    echo Dithering: !dither!
     echo ======================================
 exit /b 0
 
@@ -529,7 +531,7 @@ exit /b 0
     echo.
     set /p "ans=Enable dithering? (y/n): "
     if /I "!ans!"=="y" (
-        set "dither_option=dither=floyd_steinberg"
+        set "dither_option=dither=!dither!"
     ) else (
         set "dither_option="
     )
