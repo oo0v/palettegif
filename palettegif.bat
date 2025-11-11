@@ -589,17 +589,18 @@ exit /b 0
         set "palette_file=%%~dpnA_palette.png"
     )
 
-    set /a "low_height=!min_height!"
-    set /a "high_height=!height!"
-    set "tries=0"
-    set "current_height=!height!"
+    set /a "min_height = (min_height/8)*8"
+    set /a "height     = (height/8)*8"
+    set /a "low_height = min_height"
+    set /a "high_height = height"
+    set /a "current_height = height"
+    set /a "tries = 0"
     set "last_height=0"
 
     :generate_loop
-        set /a "current_height=(current_height/2)*2"
+        set /a "current_height = (current_height/8)*8"
+        set /a "tries += 1"
 
-        set /a "tries+=1"
-        
         echo.
         echo ========== Trial !tries! of !max_tries! ==========
         echo Attempting with height: !current_height!
@@ -631,12 +632,7 @@ exit /b 0
         call :check_file_size "!output_file!" || exit /b 1
 
         if !tries! GEQ !max_tries! (
-            if !filesize! GTR !target_size! (
-                echo Maximum tries reached. Best attempt: !filesize! bytes
-                if exist "!palette_file!" del "!palette_file!"
-                exit /b 0
-            )
-            echo Maximum tries reached. Last attempt: !filesize! bytes
+            echo Maximum tries reached. Final attempt: !filesize! bytes
             if exist "!palette_file!" del "!palette_file!"
             exit /b 0
         )
@@ -644,8 +640,7 @@ exit /b 0
         if !filesize! GTR !target_size! (
             if !tries!==1 (
                 echo.
-                echo File size exceeds target size.
-                echo Starting binary search to find optimal height for target file size...
+                echo File size exceeds target size. Starting binary search...
                 echo.
             )
             if !current_height! LEQ !min_height! (
@@ -653,15 +648,9 @@ exit /b 0
                 if exist "!palette_file!" del "!palette_file!"
                 exit /b 0
             )
-            set /a "high_height=current_height - 1"
-            set /a "current_height=(low_height + high_height) / 2"
-            set /a "current_height=(current_height/2)*2"
-
-            if !current_height! LSS !min_height! (
-                set "current_height=!min_height!"
-            )
+            set /a "high_height = current_height - 1"
         ) else (
-            set /a "size_diff=target_size - filesize"
+            set /a "size_diff = target_size - filesize"
             if !size_diff! LSS 1048576 (
                 echo Target size achieved within 1MB tolerance. File size: !filesize! bytes
                 if exist "!palette_file!" del "!palette_file!"
@@ -672,16 +661,18 @@ exit /b 0
                 if exist "!palette_file!" del "!palette_file!"
                 exit /b 0
             )
-            set /a "low_height=current_height + 1"
-            set /a "current_height=(low_height + high_height) / 2"
-            set /a "current_height=(current_height/2)*2"
+            set /a "low_height = current_height + 1"
         )
-        
-        if !current_height! EQU !height! (
+
+        set /a "current_height = ((low_height + high_height) / 2 / 8) * 8"
+        if !current_height! LSS !min_height! set /a "current_height = min_height"
+
+        if !current_height! EQU !last_height! (
             echo Height optimization complete. File size: !filesize! bytes
             if exist "!palette_file!" del "!palette_file!"
             exit /b 0
         )
+
         goto generate_loop
 exit /b 0
 
@@ -689,7 +680,7 @@ exit /b 0
     set "input=%~1"
     set "palette=%~2"
 
-    set "CMD=ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" -vf "fps=!fps!,zscale=w=-1:h=!current_height!:filter=!scaler_filter!,format=gbrp,palettegen=stats_mode=full" -update 1 -frames:v 1 "!palette!""
+    set "CMD=ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" -vf "fps=!fps!,zscale=w='trunc(iw*!current_height!/ih/2)*2':h=!current_height!:filter=!scaler_filter!,format=rgb24,palettegen=stats_mode=full" -update 1 -frames:v 1 "!palette!""
 
     echo !CMD!
     echo.
@@ -707,7 +698,7 @@ exit /b 0
     set "palette=%~2"
     set "output=%~3"
 
-    set "CMD=ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" -i "!palette!" -lavfi "fps=!fps!,zscale=w=-1:h=!current_height!:filter=!scaler_filter!,format=gbrp [x]; [x][1:v]paletteuse=!dither_option!" -loop 0 "!output!""
+    set "CMD=ffmpeg -y -v warning -stats -ss !start_time! -t !duration! -i "!input!" -i "!palette!" -lavfi "fps=!fps!,zscale=w='trunc(iw*!current_height!/ih/2)*2':h=!current_height!:filter=!scaler_filter!,format=rgb24 [x]; [x][1:v]paletteuse=!dither_option!" -loop 0 "!output!""
 
     echo !CMD!
     echo.
